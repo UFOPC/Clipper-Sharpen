@@ -111,8 +111,17 @@ globalThis.chrome = {
       return id;
     },
     async search({ id: wanted }) {
-      /* 媒体核对走批量查询（id 是数组），md 走单条。两种都支持。 */
-      const ids = Array.isArray(wanted) ? wanted : [wanted];
+      /* 真实 Chrome 的 DownloadsQuery.id 只接受单个整数，传数组会被 schema 校验直接拒掉。
+       * 早期这个桩「好心」支持了数组，于是 searchByIds({id:[…]}) 这种错误写法在单测里
+       * 一路绿灯，到真机上却每次抛异常被 catch 成 []，65 张图全被判成「查不到记录」，
+       * md 里一条图片引用都没有。桩必须和真 API 一样严格，否则它只会替代码撒谎。 */
+      if (Array.isArray(wanted)) {
+        throw new TypeError("Invalid value for argument 1. Property 'id': Expected 'integer' but got 'array'");
+      }
+      if (!Number.isInteger(wanted)) {
+        throw new TypeError("Invalid value for argument 1. Property 'id': Expected 'integer'");
+      }
+      const ids = [wanted];
       const specOf = (id) => {
         const spec = states.get(id) || {};
         let state = spec.search || "complete";

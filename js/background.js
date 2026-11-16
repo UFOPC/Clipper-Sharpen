@@ -197,16 +197,26 @@ async function downloadOne(file) {
  *                         这里只在仍有 pending 时补等一次，剩下的按成功算——
  *                         正在进行的下载不构成失败证据，且 md 写完不影响它继续落盘。
  *   查不到记录  → 失败。核不上就是核不上，宁可让引用消失，也不留悬空链接。 */
-const VERIFY_CHUNK = 64;
+const VERIFY_CHUNK = 16;
 const VERIFY_RETRY_MS = 800;
 
+/* DownloadsQuery.id 只接受**单个整数**，传数组会被 API 直接拒掉（不是返回空）。
+ * 早期版本写的就是 { id: ids }，异常被 catch 吞成 []，于是每一张图都被判成
+ * 「下载记录不存在」——字节明明落盘了，md 里却一条引用都没有。
+ * 这里逐条查再拼起来；单条失败只丢那一条，不影响同一批的其它文件。 */
 async function searchByIds(ids) {
   if (!ids.length) return [];
-  try {
-    return (await chrome.downloads.search({ id: ids })) || [];
-  } catch {
-    return [];
-  }
+  const results = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const items = await chrome.downloads.search({ id });
+        return items && items[0] ? [items[0]] : [];
+      } catch {
+        return [];
+      }
+    })
+  );
+  return results.flat();
 }
 
 async function verifyDownloads(entries) {
