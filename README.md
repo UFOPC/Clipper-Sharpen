@@ -74,7 +74,12 @@
 4. 点「加载已解压的扩展程序」，选中解压出来的目录
 5. 打开任一支持的站点，页面右侧会出现一枚红色胶囊
 
-**从源码安装**：同上，第 4 步选仓库根目录即可 —— 仓库本身就是解压后的扩展目录，没有构建步骤。
+**从源码安装**：同上，第 4 步选仓库根目录即可 —— 仓库本身就是解压后的扩展目录。
+
+> 仓库根是**唯一源码**，`dist/` 只是 `build.ps1` 生成的产物镜像，不要在里面改代码。
+> 运行时没有构建步骤（无打包、无外部库）；`build.ps1` 只负责校验清单引用、`node --check`、
+> 重建 `dist/Clipper-Sharpen/` 并打出 `dist/Clipper-Sharpen-<版本>.zip`。
+> 发版：`powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Bump 0.7.9`。
 
 > 升级：替换目录里的文件后，回到扩展页点一下该扩展的刷新按钮。
 
@@ -335,4 +340,4 @@ Chrome 对非法 filename 是直接 reject，不是截断）与 `unit-download`�
 
 ## License
 
-[Apache-2.0](./LICENSE)。无第三方运行时依赖（无打包、无外部库）。
+[Apache-2.0](./LICENSE)。无第三方运行时依赖（无打包、无外部库）；`build.ps1` 只做校验与压缩，不引入依赖。

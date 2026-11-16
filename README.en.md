@@ -68,7 +68,12 @@ This extension does exactly one thing: **click once on the page, and get a folde
 4. Click "Load unpacked" and select the extracted folder
 5. Open any supported site — a red capsule appears on the page
 
-**From source:** same as above, but select the repository root in step 4 — the repository *is* the unpacked extension directory, with no build step.
+**From source:** same as above, but select the repository root in step 4 — the repository *is* the unpacked extension directory.
+
+> The repository root is the **only** source; `dist/` is a build mirror produced by `build.ps1` — never edit code there.
+> There is no runtime build step (no bundling, no third-party libraries). `build.ps1` only verifies manifest references,
+> runs `node --check`, rebuilds `dist/Clipper-Sharpen/` and packs `dist/Clipper-Sharpen-<version>.zip`.
+> Release: `powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Bump 0.7.9`.
 
 > Upgrading: replace the files in the folder, then click the refresh button for that extension on the extensions page.
 
@@ -267,4 +272,4 @@ Do not use it for bulk scraping, redistribution, or commercial purposes. Copyrig
 
 ## License
 
-[Apache-2.0](./LICENSE). No third-party runtime dependencies (no bundler, no external libraries).
+[Apache-2.0](./LICENSE). No third-party runtime dependencies (no bundler, no external libraries); `build.ps1` only verifies and compresses.
