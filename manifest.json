@@ -58,6 +58,7 @@
          ],
          "js": [
             "js/rn-format.js",
+            "content/dom-to-md.js",
             "content/douban.js"
          ],
          "run_at": "document_idle"
@@ -68,6 +69,7 @@
          ],
          "js": [
             "js/rn-format.js",
+            "content/dom-to-md.js",
             "content/sspai.js"
          ],
          "matches": [
@@ -81,6 +83,7 @@
          ],
          "js": [
             "js/rn-format.js",
+            "content/dom-to-md.js",
             "content/smzdm.js"
          ],
          "matches": [
@@ -94,6 +97,7 @@
          ],
          "js": [
             "js/rn-format.js",
+            "content/dom-to-md.js",
             "content/wechat.js"
          ],
          "matches": [
@@ -107,6 +111,7 @@
          ],
          "js": [
             "js/rn-format.js",
+            "content/dom-to-md.js",
             "content/thepaper.js"
          ],
          "matches": [

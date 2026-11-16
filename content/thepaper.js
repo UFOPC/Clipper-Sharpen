@@ -29,12 +29,14 @@
   const MAX_COMMENT_PAGES = 15;
   const COMMENT_API = "https://api.thepaper.cn/comment/news/comment/talkList";
   const BATCH = 8;
-  const BLOCK = new Set([
-    "address", "article", "aside", "blockquote", "div", "dl", "dt", "dd",
-    "figure", "figcaption", "footer", "header", "ol", "p", "pre", "section",
-    "table", "tbody", "thead", "tfoot", "tr", "ul",
-  ]);
-  const DROP = new Set(["script", "style", "noscript", "svg", "input", "button", "source", "track"]);
+  /* BLOCK / DROP 都用 dom-to-md.js 的那一份——澎湃的取值与它逐项相同，
+   * 再抄一遍只会让「哪些标签算块」有两个真相。下面 filter 掉的三类是澎湃
+   * 要自己留痕的（见 walkBody 的 node 钩子），所以不能进 DROP。 */
+  function localDrop() {
+    return new Set(
+      [...globalThis.__XHX_DOM.DROP].filter((tag) => !["iframe", "video", "audio"].includes(tag))
+    );
+  }
 
   const squash = (value) => String(value || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
 
@@ -131,143 +133,87 @@
     }
   }
 
-  /* 图片与音视频共用一套原位占位符；下载结束后按真实落盘结果替换。 */
+  /* 图片与音视频共用一套原位占位符；下载结束后按真实落盘结果替换。
+   * 序列化本身在 dom-to-md.js——这里只用 node 声明澎湃自己的三种「留痕」：
+   * HLS 不支持、音视频取不到地址、iframe 不下载。 */
   function walkBody(root, data) {
-    const out = [];
     const media = [];
-    const seen = new Set();
-    let unsupported = 0;
+    const unsupportedNotes = [];
     let truncated = false;
-
-    const push = (text) => {
-      if (text) out.push(text);
-    };
-
-    function addMedia(url, kind) {
-      if (!url || seen.has(url)) return;
-      if (kind !== "image" && /\.m3u8(?:$|[?#])/i.test(url)) {
-        unsupported++;
-        push("\n\n> HLS（m3u8）媒体暂不支持直接下载。\n\n");
-        return;
-      }
-      if (media.length >= MAX_MEDIA) {
+    const result = globalThis.__XHX_DOM.walkWith(root, {
+      block: globalThis.__XHX_DOM.BLOCK,
+      /* 澎湃这几类要自己留痕，所以不能进 DROP：交给下面的 node 钩子。 */
+      drop: localDrop(),
+      list: { ordered: true, wrapBlock: false, trailing: true },
+      /* 澎湃的图注只是普通块，不写成引用行（历史实现如此，改它会动所有旧存档）。 */
+      quote: { blockquote: true, figcaption: false },
+      inline: true,
+      heading: "full",
+      link: "resolve",
+      base: location.href,
+      hr: true,
+      normalize: "strip",
+      squashText: false,
+      /* 超上限的媒体不登记，只把 truncated 置真——上层据此补一句「已截断」。 */
+      overLimit() {
+        if (media.length < MAX_MEDIA) return false;
         truncated = true;
-        return;
-      }
-      seen.add(url);
-      media.push({ url, kind });
-      push("\n\n\u0000" + (media.length - 1) + "\u0000\n\n");
-    }
-
-    function visit(node) {
-      if (node.nodeType === 3) {
-        push(node.nodeValue.replace(/\u00a0/g, " "));
-        return;
-      }
-      if (node.nodeType !== 1) return;
-      const tag = node.tagName.toLowerCase();
-      if (DROP.has(tag)) return;
-
-      if (tag === "img") {
-        addMedia(imageUrl(node), "image");
-        return;
-      }
-      if (tag === "video" || tag === "audio") {
-        const url = mediaElementUrl(node);
-        if (url) addMedia(url, tag);
-        else {
-          unsupported++;
-          push(`\n\n> ${tag === "video" ? "视频" : "音频"}未取到可下载地址。\n\n`);
-        }
-        return;
-      }
-      if (tag === "iframe") {
-        unsupported++;
-        push("\n\n> iframe 内嵌内容未下载。\n\n");
-        return;
-      }
-      if (tag === "br") {
-        push("\n");
-        return;
-      }
-      if (tag === "hr") {
-        push("\n\n---\n\n");
-        return;
-      }
-      if (/^h[1-6]$/.test(tag)) {
-        push("\n\n" + "#".repeat(Number(tag[1])) + " ");
-        for (const child of node.childNodes) visit(child);
-        push("\n\n");
-        return;
-      }
-      if (tag === "strong" || tag === "b") {
-        push("**");
-        for (const child of node.childNodes) visit(child);
-        push("**");
-        return;
-      }
-      if (tag === "em" || tag === "i") {
-        push("*");
-        for (const child of node.childNodes) visit(child);
-        push("*");
-        return;
-      }
-      if (tag === "code") {
-        push("`");
-        for (const child of node.childNodes) visit(child);
-        push("`");
-        return;
-      }
-      if (tag === "a" && !node.querySelector("img")) {
-        const text = squash(node.textContent);
-        const raw = node.getAttribute("href") || "";
-        try {
-          const href = new URL(raw, location.href);
-          if (text && /^https?:$/.test(href.protocol)) {
-            push(`[${text}](${href.href})`);
-            return;
+        return true;
+      },
+      mediaUrl(node, kind) {
+        /* 图片走站方原图；音视频取 src，m3u8 由 onMedia 侧判掉。 */
+        return kind === "image" ? imageUrl(node) : mediaElementUrl(node);
+      },
+      node(node, api, tag) {
+        if (tag === "video" || tag === "audio") {
+          const url = mediaElementUrl(node);
+          if (!url) {
+            unsupportedNotes.push(tag);
+            api.push(`\n\n> ${tag === "video" ? "视频" : "音频"}未取到可下载地址。\n\n`);
+            return true;
           }
-        } catch (error) {
-          /* 无有效地址时保留链接文字，继续走普通节点。 */
+          api.emit(url, tag);
+          return true;
         }
-      }
-      if (tag === "li") {
-        const ordered = node.parentElement?.tagName.toLowerCase() === "ol";
-        const index = ordered ? [...node.parentElement.children].indexOf(node) + 1 : 0;
-        push("\n" + (ordered ? `${index}. ` : "- "));
-        for (const child of node.childNodes) visit(child);
-        push("\n");
-        return;
-      }
-      if (tag === "blockquote") {
-        push("\n\n> ");
-        for (const child of node.childNodes) visit(child);
-        push("\n\n");
-        return;
-      }
+        if (tag === "iframe") {
+          unsupportedNotes.push("iframe");
+          api.push("\n\n> iframe 内嵌内容未下载。\n\n");
+          return true;
+        }
+        return false;
+      },
+      onMedia(url, kind, api) {
+        /* 非图片的 m3u8 是直播流，下载下来也放不了，明确留一句而不是静默丢。 */
+        if (kind !== "image" && /\.m3u8(?:$|[?#])/i.test(url)) {
+          unsupportedNotes.push("hls");
+          return "\n\n> HLS（m3u8）媒体暂不支持直接下载。\n\n";
+        }
+        media.push({ url, kind });
+        return "\n\n\u0000" + (media.length - 1) + "\u0000\n\n";
+      },
+    });
 
-      if (BLOCK.has(tag)) push("\n\n");
-      for (const child of node.childNodes) visit(child);
-      if (BLOCK.has(tag)) push("\n\n");
-    }
-
-    visit(root);
-
-    /* “听全文”不在 content HTML 里，是 contentDetail.voiceInfo 的独立音频。 */
+    /* “听全文”不在 content HTML 里，是 contentDetail.voiceInfo 的独立音频。
+     * 顺序照旧：先写小节标题，再登记音频。同址时 addMedia 会因 seen 命中而跳过，
+     * md 里就留一个没有下文的小节——这是既存瑕疵，不属于 M-5 的范围，
+     * 用 golden 锁住原样，要改另开一条。 */
     const voice = normalizeMediaUrl(data.voiceInfo?.voiceSrc);
-    if (voice && !seen.has(voice)) {
-      push("\n\n## 听全文\n\n");
-      addMedia(voice, "audio");
+    let tail = "";
+    if (voice && !result.images.includes(voice)) {
+      tail = "\n\n## 听全文\n\n";
+      if (media.length < MAX_MEDIA) {
+        media.push({ url: voice, kind: "audio" });
+        tail += "\u0000" + (media.length - 1) + "\u0000\n\n";
+      }
     }
 
-    const text = out
-      .join("")
-      .replace(/\u00a0/g, " ")
-      .replace(/[ \t]+\n/g, "\n")
-      .replace(/\n[ \t]+/g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-    return { text, media, unsupported, truncated };
+    return {
+      text: (result.text + tail).replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n")
+        .replace(/\n[ \t]+/g, "\n").replace(/\n{3,}/g, "\n\n").trim(),
+      media,
+      unsupported: unsupportedNotes.length,
+      truncated,
+    };
   }
 
   function readArticle() {

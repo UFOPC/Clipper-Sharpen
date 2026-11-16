@@ -205,59 +205,24 @@
 
   /* 正文走一趟，图片在原位留 \u0000N\u0000 占位符，保证 md 里图不乱序。
    * 豆瓣的正文是「<p> + <div.image-container>」交替，偶尔夹引用块和分隔线；
-   * 图片容器的 figcaption（图注）跟在图后面当引用行。 */
+   * 图片容器的 figcaption（图注）跟在图后面当引用行。
+   * 序列化本身在 dom-to-md.js——这里只声明豆瓣该用哪套规则。 */
   function walkBody(root) {
-    const parts = [];
-    const images = [];
-    const seen = new Set();
-
-    const push = (text) => {
-      if (text) parts.push(text);
-    };
-
-    function visit(node) {
-      if (node.nodeType === 3) {
-        const t = node.textContent.replace(/\s+/g, " ");
-        if (t.trim()) push(t);
-        return;
-      }
-      if (node.nodeType !== 1) return;
-      const tag = node.tagName.toLowerCase();
-      if (tag === "script" || tag === "style" || tag === "noscript") return;
-
-      if (tag === "img") {
-        const url = imageUrl(node);
-        if (!url || seen.has(url)) return;
-        seen.add(url);
-        images.push(url);
-        push("\n\n\u0000" + (images.length - 1) + "\u0000\n\n");
-        return;
-      }
-      if (tag === "br") {
-        push("\n");
-        return;
-      }
-
-      const block = /^(p|h[1-6]|li|blockquote|figcaption|div|figure|section|pre|table|tr)$/.test(tag);
-      if (block) push("\n");
-      if (tag === "h2") push("## ");
-      else if (tag === "h3") push("### ");
-      else if (tag === "h4") push("#### ");
-      else if (tag === "li") push("- ");
-      else if (tag === "blockquote") push("> ");
-
-      for (const child of node.childNodes) visit(child);
-      if (block) push("\n");
-    }
-
-    visit(root);
-    const text = parts
-      .join("")
-      .replace(/[ \t]+/g, " ")
-      .replace(/ *\n */g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-    return { text, images };
+    const result = globalThis.__XHX_DOM.walkWith(root, {
+      block: globalThis.__XHX_DOM.PLAIN_BLOCK,
+      drop: globalThis.__XHX_DOM.PLAIN_DROP,
+      list: { ordered: false, wrapBlock: false, trailing: true },
+      quote: { blockquote: true, figcaption: false },
+      inline: false,
+      heading: "h234",
+      link: null,
+      pad: "\n",
+      imagePad: "\n\n",
+      normalize: "squash",
+      squashText: true,
+      imageUrl,
+    });
+    return { text: result.text, images: result.images };
   }
 
   function readReview() {

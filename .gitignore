@@ -24,6 +24,11 @@ _metadata/
 test/fixtures/
 test/**/*.html
 
+# dump-md.mjs 抄出来的基准正文——它是 fixtures 的派生物，受同一条版权限制。
+# 没有 fixtures 时基准也用不上（脚本会跳过），所以不入库不影响任何人复现。
+# 需要重建：把快照放进 test/fixtures/ 再跑 node test/dump-md.mjs
+test/golden/
+
 # 用例跑出来的截图，每次重跑都会重写
 test/*.png
 

@@ -84,92 +84,58 @@
   }
 
   /* 正文走一趟，图片和视频在原位留占位符，保证 md 里顺序不乱。
-   * media 里每项带 video 标记：图片走站方 1080/710 两档改写，视频是签名地址，原样下。 */
+   * media 里每项带 video 标记：图片走站方 1080/710 两档改写，视频是签名地址，原样下。
+   * 序列化本身在 dom-to-md.js——这里只用 skip/node 声明什么值买不抓、怎么记卡片。 */
   function walkBody(root) {
-    const parts = [];
     const media = [];
-    const seen = new Set();
-
-    const push = (text) => {
-      if (text) parts.push(text);
-    };
-
-    const add = (url, video) => {
-      if (!url || seen.has(url)) return;
-      seen.add(url);
-      media.push({ url, video: !!video });
-      push((video ? "\n\u0000" : "\u0000") + (media.length - 1) + "\u0000" + (video ? "\n" : ""));
-    };
-
-    function visit(node) {
-      if (node.nodeType === 3) {
-        const t = node.textContent.replace(/\s+/g, " ");
-        if (t.trim()) push(t);
-        return;
-      }
-      if (node.nodeType !== 1) return;
-
-      const tag = node.tagName.toLowerCase();
-      if (tag === "script" || tag === "style" || tag === "noscript" || tag === "input") return;
-      // 标题和日期/点赞那一行都在 article 里，但它们由别的字段负责
-      if (tag === "h1") return;
-      if (node.classList.contains("recommend-tab")) return;
-      // 挂载点在部分页面会退化到 article 本身，别把我们自己的按钮和面板当正文抓走
-      if (node.classList.contains("xhx-zdm-slot")) return;
-      // 品牌合作声明是站方模板文案，不是作者内容
-      if (node.classList.contains("interests_statement")) return;
-      // 商品卡片是空壳（内容由 JS 异步注入），留个记号比静默丢掉好
-      if (node.classList.contains("insert-card-editor")) {
-        push("\n> 商品卡片（原文为站内嵌卡片，未抓取）\n");
-        return;
-      }
-
-      if (tag === "img") {
-        add(imageUrl(node), false);
-        return;
-      }
-      /* 视频是站内嵌卡片：静态 HTML 里只有 video-id，播放器由 JS 注入。
-       * 注入后是 <video class="haowen-video"><source src="https://sqcwsp-vod.smzdm.com/…mp4?sign=…">
-       * 地址自带签名参数，直接交给下载器即可，不需要 Referer。 */
-      if (tag === "video" || node.classList.contains("insert-video-card")) {
-        const video = tag === "video" ? node : node.querySelector("video");
-        const source = video && (video.currentSrc || (video.querySelector("source") || {}).src || video.src || "");
-        if (source) add(source, true);
-        else push("\n\n> 视频卡片（未取到播放地址，展开页面后重试）\n\n");
-        return;
-      }
-      if (tag === "br") {
-        push("\n");
-        return;
-      }
-      if (tag === "hr") {
-        push("\n\n---\n\n");
-        return;
-      }
-
-      const block = /^(p|h[1-6]|li|blockquote|div|section|pre|table|tr|figure|figcaption)$/.test(tag);
-      if (block) push("\n");
-      if (tag === "h2") push("## ");
-      else if (tag === "h3") push("### ");
-      else if (tag === "h4") push("#### ");
-      else if (tag === "li") push("- ");
-      else if (tag === "blockquote") push("> ");
-      else if (tag === "strong" || tag === "b") push("**");
-
-      for (const child of node.childNodes) visit(child);
-
-      if (tag === "strong" || tag === "b") push("**");
-      if (block) push("\n");
-    }
-
-    visit(root);
-    const text = parts
-      .join("")
-      .replace(/[ \t]+/g, " ")
-      .replace(/ *\n */g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-    return { text, media };
+    const result = globalThis.__XHX_DOM.walkWith(root, {
+      block: globalThis.__XHX_DOM.PLAIN_BLOCK,
+      drop: new Set(["script", "style", "noscript", "input", "h1"]),
+      list: { ordered: false, wrapBlock: false, trailing: true },
+      quote: { blockquote: true, figcaption: false },
+      inline: true,
+      heading: "h234",
+      link: null,
+      hr: true,
+      pad: "\n",
+      normalize: "squash",
+      squashText: true,
+      /* 站点私有的节点语义：商品卡片是空壳、视频卡片要先取到播放地址 */
+      skip(node) {
+        return node.classList.contains("recommend-tab") ||
+          node.classList.contains("xhx-zdm-slot") ||
+          node.classList.contains("interests_statement");
+      },
+      node(node, api, tag) {
+        if (node.classList.contains("insert-card-editor")) {
+          api.push("\n> 商品卡片（原文为站内嵌卡片，未抓取）\n");
+          return true;
+        }
+        /* 视频是站内嵌卡片：静态 HTML 里只有 video-id，播放器由 JS 注入。
+         * 注入后是 <video class="haowen-video"><source src="https://sqcwsp-vod.smzdm.com/…mp4?sign=…">
+         * 地址自带签名参数，直接交给下载器即可，不需要 Referer。 */
+        if (tag === "video" || node.classList.contains("insert-video-card")) {
+          const video = tag === "video" ? node : node.querySelector("video");
+          const source = video && (video.currentSrc || (video.querySelector("source") || {}).src || video.src || "");
+          if (source) {
+            if (api.fresh(source)) {
+              media.push({ url: source, video: true });
+              api.push("\n\u0000" + (media.length - 1) + "\u0000\n");
+            }
+          } else {
+            api.push("\n\n> 视频卡片（未取到播放地址，展开页面后重试）\n\n");
+          }
+          return true;
+        }
+        return false;
+      },
+      onMedia(url) {
+        media.push({ url, video: false });
+        return "\u0000" + (media.length - 1) + "\u0000";
+      },
+      imageUrl,
+    });
+    return { text: result.text, media };
   }
 
   function readArticle() {

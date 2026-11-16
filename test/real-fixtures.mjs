@@ -87,6 +87,9 @@ async function openPage(fixture, url, cssName, jsName) {
   await page.goto(url, { waitUntil: "commit", timeout: 30000 });
   await page.addStyleTag({ path: path.join(EXT, "content", cssName) });
   await page.addScriptTag({ path: path.join(EXT, "js/rn-format.js") });
+  /* dom-to-md.js 是共享 walker；manifest 里排在站点脚本之前，这里要照着来。
+     站点已经收敛到 walkWith 之后缺了它会直接报 __XHX_DOM 未定义。 */
+  await page.addScriptTag({ path: path.join(EXT, "content/dom-to-md.js") });
   await page.addScriptTag({ path: path.join(EXT, "content", jsName) });
   await page.waitForSelector(".xhx-entry, [class$='-xhx-entry']", { timeout: 15000 });
   return page;

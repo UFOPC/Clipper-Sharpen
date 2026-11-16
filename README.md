@@ -318,7 +318,19 @@ done
 Chrome 对非法 filename 是直接 reject，不是截断）与 `unit-download`（md / comments.json
 必须确知写完了才算成功，视频大图不等待）。
 
+**改正文序列化逻辑时先看基准**。所有站点共用 `content/dom-to-md.js` 这一份 walker，
+它的行为由 `test/dump-md.mjs` 的 golden 基准守着：
+
+```bash
+node test/dump-md.mjs --check   # 与基准逐字符比对，只报第一处差异
+node test/dump-md.mjs           # 重建基准（改之前先跑，确认改动是想要的）
+```
+
+`unit-thepaper-walk.mjs` 与 `unit-wechat-walk.mjs` 是同一思路的离线版：把旧实现抄成 `LEGACY()`
+与新的 `walkWith` 跑同一批合成 DOM，逐字符比对正文与媒体清单。这两个不需要快照，能进 CI。
+
 页面快照（`test/fixtures/*.html`）因版权原因不入库，缺快照的用例需要你自备。
+`test/golden/` 是快照的派生物，受同一条限制，所以也不入库——放了快照再跑一次 `dump-md.mjs` 就能重建。
 
 ## 隐私
 

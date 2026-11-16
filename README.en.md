@@ -251,7 +251,21 @@ node test/unit-kind.mjs
 Tests fall into two groups: `unit-*` run assembly and formatting logic directly in Node (with stubbed `chrome`); the rest use Playwright to launch a real browser,
 load the extension, feed it real page snapshots, and assert on what gets downloaded. Assertions revolve around the two invariants above; there is no pixel comparison.
 
+**Check the baseline before touching body serialization.** Every site shares the single walker in
+`content/dom-to-md.js`, and its behavior is locked by the golden baseline in `test/dump-md.mjs`:
+
+```bash
+node test/dump-md.mjs --check   # byte-for-byte compare, reports only the first difference
+node test/dump-md.mjs           # rebuild the baseline (run before a change, confirm it is intended)
+```
+
+`unit-thepaper-walk.mjs` and `unit-wechat-walk.mjs` are the offline version of the same idea: the old
+implementation is copied in as `LEGACY()` and run against the new `walkWith` over identical synthetic
+DOM, comparing body text and media lists character by character. They need no snapshots and can run in CI.
+
 Page snapshots (`test/fixtures/*.html`) are not committed for copyright reasons; tests that need them require you to supply your own.
+`test/golden/` is derived from those snapshots and falls under the same restriction, so it is not committed either —
+drop the snapshots in and rerun `dump-md.mjs` to rebuild it.
 
 ## Privacy
 

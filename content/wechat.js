@@ -79,92 +79,31 @@
 
   /* ---------------- 正文转 Markdown ---------------- */
 
+  /* 正文转 Markdown。
+   * 序列化本身在 dom-to-md.js——这里只声明公众号该用哪套规则：
+   * 保留行首空格（正文靠它做缩进）、站内链接只留文字、列表项不补尾换行、
+   * 每张图都要留引用（重复出现的图不省引用，只省下载）。 */
   function toMarkdown(root, onImage) {
-    const out = [];
-    let imgIndex = 0;
-
-    const walk = (node) => {
-      if (node.nodeType === 3) {
-        out.push(node.nodeValue.replace(/\u00a0/g, " "));
-        return;
-      }
-      if (node.nodeType !== 1) return;
-      const tag = node.tagName.toLowerCase();
-      if (DROP.test(tag)) return;
-
-      if (tag === "img") {
-        const url = imageUrl(node);
-        if (url && onImage) {
-          const md = onImage(url, imgIndex++);
-          if (md) out.push("\n\n", md, "\n\n");
-        }
-        return;
-      }
-      if (tag === "br") {
-        out.push("\n");
-        return;
-      }
-      if (/^h[1-6]$/.test(tag)) {
-        const level = Number(tag[1]);
-        out.push("\n\n", "#".repeat(level), " ");
-        for (const child of node.childNodes) walk(child);
-        out.push("\n\n");
-        return;
-      }
-      if (tag === "strong" || tag === "b") {
-        out.push("**");
-        for (const child of node.childNodes) walk(child);
-        out.push("**");
-        return;
-      }
-      if (tag === "em" || tag === "i") {
-        out.push("*");
-        for (const child of node.childNodes) walk(child);
-        out.push("*");
-        return;
-      }
-      if (tag === "code") {
-        out.push("`");
-        for (const child of node.childNodes) walk(child);
-        out.push("`");
-        return;
-      }
-      if (tag === "a") {
-        const text = squash(node.textContent);
-        const href = node.getAttribute("href") || "";
-        if (!text) return;
-        if (/^https?:\/\//i.test(href) && !/^https?:\/\/mp\.weixin\.qq\.com\//i.test(href)) {
-          out.push(`[${text}](${href})`);
-        } else {
-          out.push(text);
-        }
-        return;
-      }
-      if (tag === "li") {
-        const parent = node.parentElement?.tagName.toLowerCase();
-        const ordered = parent === "ol";
-        const index = ordered ? [...node.parentElement.children].indexOf(node) + 1 : 0;
-        out.push("\n", ordered ? `${index}. ` : "- ");
-        for (const child of node.childNodes) walk(child);
-        return;
-      }
-      if (tag === "blockquote") {
-        out.push("\n\n> ");
-        for (const child of node.childNodes) walk(child);
-        out.push("\n\n");
-        return;
-      }
-      if (BLOCK.has(tag)) out.push("\n\n");
-      for (const child of node.childNodes) walk(child);
-      if (BLOCK.has(tag)) out.push("\n\n");
-    };
-
-    walk(root);
-    return out.join("")
-      .replace(/\u00a0/g, " ")
-      .replace(/[ \t]+\n/g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
+    const result = globalThis.__XHX_DOM.walkWith(root, {
+      block: BLOCK,
+      drop: DROP,
+      list: { ordered: true, wrapBlock: false, trailing: false },
+      quote: { blockquote: true, figcaption: false },
+      inline: true,
+      heading: "full",
+      link: "wechat",
+      base: location.href,
+      normalize: "wechat",
+      squashText: false,
+      dedupeMedia: false,
+      imageUrl,
+      onMedia(url, kind, api, index) {
+        /* 图片两侧各留一个空行——占位符是普通字符，这些换行会原样进 md。 */
+        const md = (onImage && onImage(url, index)) || "";
+        return md ? "\n\n" + md + "\n\n" : "";
+      },
+    });
+    return result.text;
   }
 
   /* ---------------- 落盘规划 ---------------- */

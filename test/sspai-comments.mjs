@@ -63,8 +63,9 @@ await page.addInitScript(() => {
 });
 
 await page.goto("https://sspai.com/post/117510", { waitUntil: "domcontentloaded" });
-// 快照里没有我们的脚本，手动注入（顺序：先 rn-format 再 sspai）
+// 快照里没有我们的脚本，手动注入（顺序照 manifest：rn-format → dom-to-md → sspai）
 await page.addScriptTag({ content: read("js/rn-format.js") });
+await page.addScriptTag({ content: read("content/dom-to-md.js") });
 await page.addScriptTag({ content: read("content/sspai.js") });
 
 await page.waitForSelector(".sspai-xhx-slot", { timeout: 5000 });
