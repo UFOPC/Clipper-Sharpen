@@ -1,4 +1,7 @@
 # 发版包不入库（作为 Release 附件）
+# 注意：源码只放仓库根，dist/ 是 build.ps1 生成的产物镜像，不要在这里手改。
+# 0.7.7/0.7.8 曾有 8 个源文件只活在 dist/Clipper-Sharpen/ 且从未进入任何提交，
+# 一次 git clean 就会全部消失 —— 源码改动一律先落到仓库根。
 dist/
 *.zip
 *.crx

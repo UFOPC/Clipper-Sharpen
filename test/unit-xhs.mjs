@@ -212,16 +212,27 @@ assert.equal(values.get("note1:rn").files[0].url, "https://cdn.test/1440.mp4", "
 await route({ type: "saveData", downloadId: "note1", rnOnly: true, videoUrl: "https://cdn.test/720.mp4" });
 assert.equal(values.get("note1:rn").files[0].url, "https://cdn.test/720.mp4", "面板档位必须覆盖后台默认档");
 
-setState({ ...videoNote, imageList: [baseNote.imageList[0]] });
+setState({ ...videoNote, imageList: [baseNote.imageList[0], baseNote.imageList[1]] });
 await route({ type: "saveData", downloadId: "note1", rnOnly: true });
-const mixed = values.get("note1:rn").files;
-assert.deepEqual(mixed.filter((file) => file.url).map((file) => file.filename), [
+const withCovers = values.get("note1:rn").files;
+assert.deepEqual(withCovers.filter((file) => file.url).map((file) => file.filename), [
   "标题/images/2025.11.01_标题-01.webp",
+  "标题/images/2025.11.01_标题-02.jpg",
   "标题/media/2025.11.01_标题-01.mp4",
-], "正文图片与视频分目录并各自从 01 编号");
-const mixedMd = mixed.find((file) => file.mime === "text/markdown").text;
-assert.equal((mixedMd.match(/!\[\d+\]/g) || []).length, 2, "一图一视频有两条正文引用");
-assert.ok(mixedMd.includes("\n类型: 图文+视频\n"), "评论图不进入正文类型与媒体计数");
+], "视频笔记默认保留 imageList 封面，并追加所选视频");
+const withCoversMd = withCovers.find((file) => file.mime === "text/markdown").text;
+assert.equal((withCoversMd.match(/!\[\d+\]/g) || []).length, 3, "两张封面和一路视频有三条正文引用");
+assert.ok(withCoversMd.includes("\n类型: 图文+视频\n"), "保留封面时类型是图文+视频");
+
+await route({ type: "saveData", downloadId: "note1", rnOnly: true, skipMedia: true });
+const videoOnly = values.get("note1:rn").files;
+assert.deepEqual(videoOnly.filter((file) => file.url).map((file) => file.filename), [
+  "标题/media/2025.11.01_标题-01.mp4",
+], "视频贴选择封面「跳过」后只去掉封面，不影响视频");
+const videoOnlyMd = videoOnly.find((file) => file.mime === "text/markdown").text;
+assert.equal((videoOnlyMd.match(/!\[\d+\]/g) || []).length, 1, "跳过封面后只有一条正文视频引用");
+assert.ok(!videoOnlyMd.includes("./images/"), "跳过封面后正文不得引用图片");
+assert.ok(videoOnlyMd.includes("\n类型: 视频\n"), "跳过封面后类型保持为视频");
 
 downloads.length = 0;
 await route({

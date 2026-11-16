@@ -73,12 +73,19 @@
 /* 左边「图片」，右边张数 */
 .xhx-dz-key {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-start;
   flex: none;
   font-size: 13px;
   font-weight: 500;
   color: #1f2328;
+}
+
+.xhx-dz-key .xhx-dz-label {
+  flex: none;
+  white-space: nowrap;
+  line-height: 1.6;
 }
 
 .xhx-dz-key .cnt {
@@ -86,6 +93,22 @@
   font-weight: 400;
   color: #6b7280;
   font-variant-numeric: tabular-nums;
+  text-align: right;
+  line-height: 1.6;
+}
+
+.xhx-dz-key .cnt .xhx-dz-count-line {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.xhx-dz-count-number {
+  display: inline-block;
+  min-width: 3ch;
+  text-align: right;
 }
 
 .xhx-dz-seg {

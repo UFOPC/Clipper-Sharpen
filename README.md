@@ -1,7 +1,8 @@
 # 小红虾 · 下载助手
 
 > 一个 Chrome / Edge 扩展（Manifest V3）：把小红书笔记、Discuz 论坛帖子（Chiphell / 远景 / 恩山 / 耳机大家坛）、
-> 豆瓣影评与小组话题、少数派文章、什么值得买文章、微信公众号文章、单篇微博、下厨房菜谱，
+> 豆瓣影评与小组话题、少数派文章、什么值得买文章、微信公众号文章、澎湃新闻文章、单篇微博、下厨房菜谱、
+> 蜂鸟摄影帖、色影无忌主站文章、ABBS 建筑帖、ArchDaily / 谷德建筑案例，
 > 连同图片、视频、评论，存成一份带 YAML frontmatter 的 Markdown + 分类媒体目录。
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
@@ -29,7 +30,7 @@
 
 | 站点 | 域名 | 内容 | 备注 |
 |---|---|---|---|
-| 小红书 | `xiaohongshu.com` | 图文笔记、视频笔记（选清晰度）、实况图、原视频、评论 | 支持「正文」「正文+回复」「图片下载/跳过」 |
+| 小红书 | `xiaohongshu.com` | 图文笔记、视频笔记（选清晰度）、实况图、原视频、评论 | 支持「正文」「正文+回复」「图片下载/跳过」；视频贴的封面可单独下载/跳过 |
 | Chiphell | `chiphell.com` | 论坛帖子正文与全部图片 | 支持「只看楼主」（`authorid`）与跨页翻页 |
 | 远景论坛 | `bbs.pcbeta.com` | 论坛帖子正文与全部图片 | 与 Chiphell 共用一套 Discuz 引擎，零新增 JS |
 | 恩山无线 | `right.com.cn` | 论坛帖子正文与全部图片 | 同上；站方有滑块风控，脚本化跑会撞验证码 |
@@ -38,8 +39,16 @@
 | 少数派 | `sspai.com` | 文章正文、图片、评论 | 图片直连 403，走内容脚本取字节 |
 | 什么值得买 | `post.smzdm.com` | 文章正文、图片、站内视频、评论 | 只认 `/p/` 文章页；图片后缀 `.jpg` 不可信，MIME 要还原 |
 | 微信公众号 | `mp.weixin.qq.com` | 文章正文与图片 | 结构与其它站点一致；只做单篇手动 |
+| 澎湃新闻 | `thepaper.cn` | 文章正文、原图、标签、评论、内嵌音视频与「听全文」 | 只认 `/newsDetail_forward_<id>`；评论合并热评/新评并按 ID 去重，保留一级回复；普通 MP3/MP4 直接下载，HLS（m3u8）、DRM 与 iframe 不处理 |
 | 微博 | `m.weibo.cn` | **单篇**图文 / 组图，取 `/large/` 原图 | **只做单篇**：仅 `/status/<id>` 与 `/detail/<id>`，用户主页、话题页、批量都不支持；视频封面不算配图，不下视频 |
 | 下厨房 | `xiachufang.com` | 菜谱简介、用料表、逐步图、成品图 | 图片剥掉 `?imageView2/…` 取原图；CDN 裸请求即 200，无需 Referer |
+| 蜂鸟摄影 | `m.fengniao.com` / `bbs.fengniao.com` | 作品帖、原图、EXIF、回复 | 支持 `/forum/<id>` 与 `_p<postid>` 永久链接；后台带 Referer 取图，HTML 错误页不会存成 JPG |
+| 色影无忌 | `vision.xitek.com` | 主站资讯、赛事文章与原图 | 只注入 `/news/`；`forum.xitek.com` 当前不可达，未做论坛适配 |
+| ABBS建筑论坛 | `abbs.com.cn` | 建筑帖子、新闻、专题、图片、分页与回复 | 论坛用 Jute `tr.odd` 楼层；新闻 `/news/read.php` 与专题 `/topic/read.php` 也支持；图片升级 HTTPS |
+| ArchDaily | `archdaily.com` / `archdaily.cn` | 建筑案例、图库、公开音频预览与外部视频链接 | 面板分两行统计正文图片/图库图片，共用一个图片开关；图库存 `gallery/`，公开音频预览存 `media/` |
+| 谷德设计网 | `gooood.cn` | 建筑、景观、室内案例、原图与公开视频 | 图片与视频各有独立下载/跳过开关；腾讯 iframe 经公开 `getinfo` 解析非 DRM MP4 |
+
+> 澎湃音频使用 Obsidian 原生嵌入 `![[media/文件.mp3]]`，打开 md 即可显示播放器；不支持 wikilink 的阅读器可直接播放 `media/` 中的文件。
 
 > 表格、弹窗、`manifest.content_scripts.matches` 三处**顺序一致**。浏览器扩展详情页按 manifest 的
 > 顺序逐条列出 `*://*.<域名>/*`，扩展改不了那串文案，但可以保证顺序对得上，从上往下逐条能对上号。
@@ -59,7 +68,7 @@
 
 **从 Release 安装**
 
-1. 下载最新的 `XHX-<版本>.zip`（XHX 即「小红虾」的缩写）并解压到一个固定目录（别放桌面，删了就没了）
+1. 下载最新的 `Clipper-Sharpen-<版本>.zip` 并解压到一个固定目录（别放桌面，删了就没了）
 2. 打开 `chrome://extensions`（Edge 是 `edge://extensions`）
 3. 右上角打开「开发者模式」
 4. 点「加载已解压的扩展程序」，选中解压出来的目录
@@ -111,7 +120,7 @@ S101峡谷两日游/
 ---
 ```
 
-`类型` 按笔记里实际有什么来判：有图有视频 → `图文+视频`，只有视频 → `视频`，只有图或无媒体 → `图文`。
+`类型` 按笔记里实际有什么来判：有图有视频 → `图文+视频`，只有视频 → `视频`；音频参与判断时可得到 `图文+音频`、`音视频` 或 `图文+音视频`；只有图或无媒体 → `图文`。
 它描述的是**笔记本身**，不随「跳过」这类保存选项变化 —— 否则同一篇贴存两次会得到两种类型。
 
 ### 两条不变式
@@ -184,6 +193,25 @@ PW=… PW_EXE=… node test/e2e-real-weibo.mjs https://m.weibo.cn/status/5359048
 
 # 下厨房：站方滑块风控拦自动化，改用本地页面快照离线跑
 SNAP=~/Pictures/某菜谱.html PW=… PW_EXE=… node test/e2e-xcf-snapshot.mjs
+
+# 澎湃新闻：断言真实作者/时间/标签、原图、评论/回复、MP3/MP4、跳过媒体与失败引用清理
+PW=… PW_EXE=… node test/e2e-real-thepaper.mjs https://www.thepaper.cn/newsDetail_forward_34440595
+
+# 蜂鸟：移动帖、跨页原图、EXIF 与评论
+PW=… PW_EXE=… node test/e2e-real-fengniao.mjs https://m.fengniao.com/thread/12092851.html
+
+# 色影无忌主站：正文、两张原图与日期
+PW=… PW_EXE=… node test/e2e-real-xitek.mjs https://vision.xitek.com/news/202602/02-370406.html
+
+# ABBS：100 张 HTTPS 图片、分页与回复
+PW=… PW_EXE=… node test/e2e-real-abbs.mjs "https://www.abbs.com.cn/bbs/post/view?bid=52&id=341741224&sty=1&tpg=1&age=100"
+
+# ABBS 新闻 / 专题；蜂鸟桌面桥接
+PW=… PW_EXE=… node test/e2e-real-abbs-articles.mjs
+PW=… PW_EXE=… node test/fengniao-desktop.mjs
+
+# ArchDaily + 谷德：异步正文、完整图库、原图与公开视频
+PW=… PW_EXE=… node test/e2e-real-architecture.mjs
 ```
 
 `PW` / `PW_EXE` 指向任意一份 playwright 与 chromium 即可，不必装进仓库。
@@ -197,7 +225,7 @@ SNAP=~/Pictures/某菜谱.html PW=… PW_EXE=… node test/e2e-xcf-snapshot.mjs
 ## 项目结构
 
 ```
-manifest.json          MV3 清单：9 个 content script / 11 个站点 + 一个 service worker
+manifest.json          MV3 清单：15 个 content script / 17 个站点 + 一个 service worker
 js/
   background.js        消息路由、IndexedDB 暂存、小红书取数与组装
   rn-format.js         命名 / frontmatter / 图文混排 / 清晰度档位，所有站点共用
@@ -207,6 +235,14 @@ content/
   discuz.js|css        Discuz! X 通用引擎（Chiphell / 远景 / 恩山 / 耳机大家坛）：作者模式、跨页、附件格
   douban.js|css        豆瓣：影评 / 书评 / 乐评 + 小组话题 + 个人动态，图片经后台补 Referer 取字节
   wechat.js            微信公众号：正文与图片解析
+  thepaper.js          澎湃新闻：正文、原图、评论、内嵌音视频与听全文
+  clip-common.js       新站共用引擎（图片/视频独立开关、评论与失败注记）
+  dom-to-md.js         通用 DOM → Markdown 与图片占位
+  fengniao.js          蜂鸟摄影移动帖：楼主楼层、EXIF 与分页
+  xitek.js             色影无忌主站文章
+  abbs.js              ABBS：论坛、新闻、专题、HTTPS 图片与分页
+  archdaily.js         ArchDaily：公开正文接口与完整项目图库
+  gooood.js            谷德：safe-html、CDN 原图与腾讯公开视频
   sspai.js|css         少数派：含防盗链处理
   smzdm.js|css         什么值得买：含 MIME 还原与视频解密
   weibo.js|css         微博：单篇图文，图片升级到 `/large/` 原图
@@ -233,8 +269,8 @@ test/                  Playwright 端到端用例
 
 **防盗链分两种**：少数派是「内容脚本 fetch 就够」；`doubanio.com` / `sinaimg.cn` 这类是
 「必须带 Referer，页面内 fetch 又被 CORS 挡住」，只能由静态 DNR 规则改请求头 + `fetchMedia`
-后台代取，取回的字节内联成 `data:` URL 再交给下载器。两条规则分别在
-`rules/douban-referer.json`（418）与 `rules/weibo-referer.json`（403）。
+后台代取，取回的字节内联成 `data:` URL 再交给下载器。规则分别在
+`rules/douban-referer.json`（418）、`rules/weibo-referer.json`（403）与 `rules/fengniao-referer.json`（蜂鸟图床）。
 
 暂存走 IndexedDB 而不是内存：MV3 的 service worker 会被回收，内存变量活不过一次取消或一次空闲。
 
@@ -288,9 +324,9 @@ Chrome 对非法 filename 是直接 reject，不是截断）与 `unit-download`�
 
 | 项 | 内容 | 用途 |
 |---|---|---|
-| `permissions` | `downloads` / `scripting` / `storage` / `declarativeNetRequestWithHostAccess` | 落盘；在小红书页 MAIN 世界取原始 note；记住面板选项；只给豆瓣、微博图床补一个 `Referer` 请求头（两条静态规则见 `rules/`） |
-| `host_permissions` | `*.xiaohongshu.com` / `*.doubanio.com` / `*.sinaimg.cn` / `cdnfile.sspai.com` / `cdn-static.sspai.com` | 小红书取数；豆瓣与微博图床由后台代取图片字节（裸请求 418 / 403） |
-| `content_scripts` | 11 个站（见上表） | 只在对应页面注入胶囊与适配层，不额外申请 host 权限 |
+| `permissions` | `downloads` / `scripting` / `storage` / `declarativeNetRequestWithHostAccess` | 落盘；在小红书页 MAIN 世界取原始 note；记住面板选项；只给豆瓣、微博、蜂鸟图床补 `Referer` 请求头（三条静态规则见 `rules/`） |
+| `host_permissions` | `*.xiaohongshu.com` / `*.doubanio.com` / `*.sinaimg.cn` / `cdnfile.sspai.com` / `cdn-static.sspai.com` / `vv.video.qq.com` / `bbs.qn.img-space.com` | 小红书取数；豆瓣、微博与蜂鸟图床代取；腾讯 `getinfo` 仅用于谷德公开视频 |
+| `content_scripts` | 17 个站（见上表） | 只在对应页面注入胶囊与适配层，不额外申请 host 权限 |
 
 ## 免责声明
 

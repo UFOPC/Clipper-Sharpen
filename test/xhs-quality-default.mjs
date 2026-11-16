@@ -31,11 +31,12 @@ const STREAM = {
   ],
 };
 
-const page = (stream, kind) => `<!doctype html><meta charset="utf-8">
+const page = (stream, kind, images) => `<!doctype html><meta charset="utf-8">
 <style>${read("content/index.css")}</style>
 <script>
   window.__STREAM__ = ${JSON.stringify(stream)};
   window.__KIND__ = ${JSON.stringify(kind || (stream ? "video" : "normal"))};
+  window.__IMAGES__ = ${JSON.stringify(images || [])};
   window.__sent = [];
   window.chrome = {
     runtime: {
@@ -46,7 +47,7 @@ const page = (stream, kind) => `<!doctype html><meta charset="utf-8">
         return Promise.resolve(
           msg && msg.type === "getNote"
             ? Object.assign(
-                { type: window.__KIND__ },
+                { type: window.__KIND__, imageList: window.__IMAGES__ },
                 window.__STREAM__ ? { video: { media: { stream: window.__STREAM__ } } } : {}
               )
             : {}
@@ -70,10 +71,10 @@ const browser = await chromium.launch({
   headless: true,
 });
 
-async function open(stream, ready, kind) {
+async function open(stream, ready, kind, images) {
   const p = await browser.newPage();
   await p.route("https://www.xiaohongshu.com/**", (route) =>
-    route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: page(stream, kind) })
+    route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: page(stream, kind, images) })
   );
   await p.goto("https://www.xiaohongshu.com/explore/abc123", { waitUntil: "load" });
   // 胶囊默认 display:none，要等页面自己 a(1,…) 才显示；这里只关心逻辑，attached 即可
@@ -156,6 +157,34 @@ async function open(stream, ready, kind) {
   ok(r.rows.join() === "原始画质", `写「原始画质」（${r.rows.join()}）`);
   ok(r.photo === false, "不能退化成图文面板");
   ok(!r.url, "不指定档位，后台自己挑最高档");
+  await p.close();
+}
+
+/* ③'' 视频封面选项：默认下载，可切换跳过；不能套用图文窄面板 */
+{
+  const covers = [
+    { url: "https://cdn.test/cover-1.jpg", width: 100 },
+    { url: "https://cdn.test/cover-2.jpg", width: 200 },
+  ];
+  const p = await open(STREAM, () => document.querySelector(".xhx-photo-row")?.hidden === false, "video", covers);
+  const r = await p.evaluate(() => {
+    const row = document.querySelector(".xhx-photo-row");
+    return {
+      label: row.querySelector(".xhx-photo-key").firstChild.nodeValue,
+      cnt: row.querySelector(".cnt").textContent,
+      on: [...row.querySelectorAll("button.is-on")].map((b) => b.textContent),
+      media: document.querySelector(".xhx-download-container").dataset.media,
+      photo: document.querySelector(".xhx-download-more").classList.contains("is-photo"),
+      qualityHidden: document.querySelector(".xhx-quality").hidden,
+    };
+  });
+  ok(r.label === "封面" && r.cnt === "2 张", `视频贴显示封面计数（${r.label} ${r.cnt}）`);
+  ok(r.on.join() === "下载" && r.media === "1", "封面缺省选下载");
+  ok(!r.photo && !r.qualityHidden, "封面行叠加在视频面板，不退成图文窄面板");
+  await p.evaluate(() => document.querySelector('.xhx-photo-seg button[data-value="0"]').click());
+  ok(await p.evaluate(() => document.querySelector(".xhx-download-container").dataset.media === "0"), "封面可切到跳过");
+  await p.evaluate(() => document.querySelector('.xhx-photo-seg button[data-value="1"]').click());
+  ok(await p.evaluate(() => document.querySelector(".xhx-download-container").dataset.media === "1"), "封面可切回下载");
   await p.close();
 }
 

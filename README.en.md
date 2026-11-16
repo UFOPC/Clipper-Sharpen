@@ -2,7 +2,8 @@
 
 > A Chrome / Edge extension (Manifest V3) that saves Xiaohongshu notes, Discuz forum threads (Chiphell, PCbeta,
 > Enshan, Erji), Douban reviews and group topics, SSPAI articles, SMZDM articles, WeChat public-account posts,
-> single Weibo posts, and Xiachufang recipes — together with their images, videos, and comments — as a Markdown
+> The Paper articles, single Weibo posts, Xiachufang recipes, Fengniao photo threads, Xitek articles,
+> ABBS architecture threads, and ArchDaily / gooood projects — together with their images, videos, and comments — as a Markdown
 > file with YAML frontmatter plus media organized into dedicated folders.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
@@ -33,7 +34,7 @@ This extension does exactly one thing: **click once on the page, and get a folde
 
 | Site | Domain | Content | Notes |
 |---|---|---|---|
-| Xiaohongshu | `xiaohongshu.com` | Image-text notes, video notes (quality selectable), Live Photos, original video, comments | Offers "Body", "Body + Comments", and "Images: Download / Skip" |
+| Xiaohongshu | `xiaohongshu.com` | Image-text notes, video notes (quality selectable), Live Photos, original video, comments | Offers "Body", "Body + Comments", and "Images: Download / Skip"; video-note covers have a separate Download / Skip option |
 | Chiphell | `chiphell.com` | Thread body and all images | Supports "OP only" (`authorid`) and cross-page threads |
 | PCbeta | `bbs.pcbeta.com` | Thread body and all images | Same Discuz engine as Chiphell — no extra JS |
 | Enshan | `right.com.cn` | Thread body and all images | Same engine as above; the site runs slider captcha, so scripted runs hit a challenge |
@@ -42,8 +43,16 @@ This extension does exactly one thing: **click once on the page, and get a folde
 | SSPAI | `sspai.com` | Article body, images, comments | Direct image requests return 403; bytes are fetched by the content script |
 | SMZDM | `post.smzdm.com` | Article body, images, in-page video, comments | Only `/p/` article pages; image `.jpg` suffixes are unreliable, MIME must be restored |
 | WeChat public accounts | `mp.weixin.qq.com` | Article body and images | Same tree as every other site; single-article manual saving only |
+| The Paper | `thepaper.cn` | Article body, original images, tags, comments, embedded audio/video and listen-to-article audio | Only `/newsDetail_forward_<id>`; merges hot/new comments by ID and keeps one level of replies; plain MP3/MP4 downloads are supported, while HLS (m3u8), DRM and iframes are not |
 | Weibo | `m.weibo.cn` | **Single post only** — image-text or gallery, upgraded to `/large/` originals | **One post at a time**: only `/status/<id>` and `/detail/<id>`; user timelines, topic feeds and bulk saving are not supported. Video posters do not count as images, and videos are not downloaded |
 | Xiachufang | `xiachufang.com` | Recipe intro, ingredient table, step images, finished-dish images | Strips the `?imageView2/…` thumbnail instruction to get the original; the CDN answers bare requests with 200, no Referer needed |
+| Fengniao | `m.fengniao.com` / `bbs.fengniao.com` | Photo threads, originals, EXIF and replies | Supports `/forum/<id>` and `_p<postid>` permalinks; images are fetched in the background with Referer so HTML error pages are never saved as JPGs |
+| Xitek | `vision.xitek.com` | Main-site news, contest articles and originals | `/news/` only; `forum.xitek.com` is currently unreachable and has no forum adapter |
+| ABBS | `abbs.com.cn` | Architecture threads, news, topics, images, pagination and replies | Supports Jute forum floors, `/news/read.php` and `/topic/read.php`; images are upgraded to HTTPS |
+| ArchDaily | `archdaily.com` / `archdaily.cn` | Projects, galleries, public audio previews and external video links | Body and gallery image counts use two lines with one shared image toggle; gallery goes to `gallery/`, public audio previews to `media/` |
+| gooood | `gooood.cn` | Architecture, landscape and interior projects with originals and public video | Independent image/video Download-Skip controls; resolves non-DRM Tencent iframe videos through public `getinfo` |
+
+> The Paper audio uses Obsidian's native embed syntax `![[media/file.mp3]]`, which shows a player when the Markdown is opened. Other readers can play the files directly from `media/`.
 
 > The desktop Weibo adapter (`weibo.com/detail/<mid>`) is wired into the manifest, but its API fields are built
 > entirely from the public endpoints and **have never been checked under a logged-in session**, so it is left
@@ -53,7 +62,7 @@ This extension does exactly one thing: **click once on the page, and get a folde
 
 **From a Release**
 
-1. Download the latest `XHX-<version>.zip` (XHX is short for Xiao Hong Xia) and extract it to a permanent folder (not the Desktop — it disappears when the Desktop is cleaned).
+1. Download the latest `Clipper-Sharpen-<version>.zip` and extract it to a permanent folder (not the Desktop — it disappears when the Desktop is cleaned).
 2. Open `chrome://extensions` (or `edge://extensions` on Edge)
 3. Turn on "Developer mode" in the top-right corner
 4. Click "Load unpacked" and select the extracted folder
@@ -107,7 +116,7 @@ All sites use this layout. In the `comments/` examples, `01` identifies the owni
 
 The frontmatter keys (`来源` source / `作者` author / `时间` time / `类型` type / `链接` link / `tags`) and the `类型` values are intentionally Chinese — the output targets Chinese note vaults.
 
-`类型` (type) is derived from what the note actually contains: images and video → `图文+视频`; video only → `视频`; images only or no media → `图文`.
+`类型` (type) is derived from what the note actually contains: images and video → `图文+视频`; video only → `视频`; audio can produce `图文+音频`, `音视频` or `图文+音视频`; images only or no media → `图文`.
 It describes **the note itself** and does not change with save options like "Skip" — otherwise saving the same post twice would yield two different types.
 
 ### Two invariants
@@ -178,7 +187,7 @@ feeds are out of scope — WeChat has explicit terms against bulk fetching, and 
 ## Project structure
 
 ```
-manifest.json          MV3 manifest: nine content scripts (eleven sites) + one service worker
+manifest.json          MV3 manifest: fifteen content scripts (seventeen sites) + one service worker
 js/
   background.js        message routing, IndexedDB staging, Xiaohongshu fetching and assembly
   rn-format.js         naming / frontmatter / text-image layout / quality tiers, shared by all sites
@@ -190,6 +199,14 @@ content/
   sspai.js|css         SSPAI: includes hotlink-protection handling
   smzdm.js|css         SMZDM: includes MIME restoration and video decryption
   wechat.js            WeChat public accounts: body and image parsing
+  thepaper.js          The Paper: body, original images, comments, embedded audio/video and listen-to-article audio
+  clip-common.js       Shared engine with independent image/video controls, comments and failure notes
+  dom-to-md.js         Shared DOM-to-Markdown conversion and image placeholders
+  fengniao.js          Fengniao mobile threads: OP floors, EXIF and pagination
+  xitek.js             Xitek main-site articles
+  abbs.js              ABBS: forum, news, topics, HTTPS images and pagination
+  archdaily.js         ArchDaily: public article API and full project gallery
+  gooood.js            gooood: safe-html, original CDN images and public Tencent video
   weibo.js|css         Weibo: single post only, images upgraded to `/large/`
   weibo-desktop.js     Weibo desktop: experimental, API not verified under a login
   xiachufang.js|css    Xiachufang: recipe parsing, thumbnail-instruction stripping
@@ -239,9 +256,9 @@ Page snapshots (`test/fixtures/*.html`) are not committed for copyright reasons;
   - `downloads` — writing files to disk
   - `scripting` — running the extractor in the MAIN world of Xiaohongshu pages to read the raw note object
   - `storage` — remembering panel options
-  - `declarativeNetRequestWithHostAccess` — adding a single `Referer` request header for the Douban and Weibo image hosts (two static rules under `rules/`)
-- Five `host_permissions` in total — Xiaohongshu pages, the Douban and Weibo image hosts, and SSPAI's two static-asset domains: reading note data on Xiaohongshu, and fetching image bytes in the background for Douban and Weibo (bare requests return 418 and 403 respectively)
-- `content_scripts` cover the eleven supported sites only (the capsule plus that site's adapter) and add no entries to `host_permissions`
+  - `declarativeNetRequestWithHostAccess` — adding a single `Referer` request header for the Douban, Weibo and Fengniao image hosts (three static rules under `rules/`)
+- Seven `host_permissions` in total — Xiaohongshu pages, the Douban, Weibo and Fengniao image hosts, SSPAI's two static-asset domains, and Tencent's `vv.video.qq.com`: reading note data, fetching image bytes in the background, and resolving public video information for gooood
+- `content_scripts` cover the seventeen supported sites only (the capsule plus that site's adapter) and add no entries to `host_permissions`
 
 ## Disclaimer
 

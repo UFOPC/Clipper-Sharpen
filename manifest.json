@@ -102,6 +102,19 @@
          "run_at": "document_idle"
       },
       {
+         "css": [
+            "content/discuz.css"
+         ],
+         "js": [
+            "js/rn-format.js",
+            "content/thepaper.js"
+         ],
+         "matches": [
+            "*://*.thepaper.cn/newsDetail_forward_*"
+         ],
+         "run_at": "document_idle"
+      },
+      {
          "matches": [
             "*://m.weibo.cn/status/*",
             "*://m.weibo.cn/detail/*"
@@ -141,15 +154,96 @@
             "content/xiachufang.js"
          ],
          "run_at": "document_idle"
+      },
+      {
+         "matches": [
+            "*://m.fengniao.com/thread/*",
+            "*://bbs.fengniao.com/forum/*"
+         ],
+         "css": [
+            "content/discuz.css"
+         ],
+         "js": [
+            "js/rn-format.js",
+            "content/clip-common.js",
+            "content/fengniao.js"
+         ],
+         "run_at": "document_idle"
+      },
+      {
+         "matches": [
+            "*://vision.xitek.com/news/*"
+         ],
+         "css": [
+            "content/discuz.css"
+         ],
+         "js": [
+            "js/rn-format.js",
+            "content/clip-common.js",
+            "content/dom-to-md.js",
+            "content/xitek.js"
+         ],
+         "run_at": "document_idle"
+      },
+      {
+         "matches": [
+            "*://www.abbs.com.cn/bbs/post/view*",
+            "*://www.abbs.com.cn/news/read.php*",
+            "*://www.abbs.com.cn/topic/read.php*"
+         ],
+         "css": [
+            "content/discuz.css"
+         ],
+         "js": [
+            "js/rn-format.js",
+            "content/clip-common.js",
+            "content/dom-to-md.js",
+            "content/abbs.js"
+         ],
+         "run_at": "document_idle"
+      },
+      {
+         "matches": [
+            "*://*.archdaily.com/zh/*",
+            "*://*.archdaily.cn/cn/*",
+            "*://*.archdaily.cn/zh/*"
+         ],
+         "css": [
+            "content/discuz.css"
+         ],
+         "js": [
+            "js/rn-format.js",
+            "content/clip-common.js",
+            "content/dom-to-md.js",
+            "content/archdaily.js"
+         ],
+         "run_at": "document_idle"
+      },
+      {
+         "matches": [
+            "*://*.gooood.cn/*"
+         ],
+         "css": [
+            "content/discuz.css"
+         ],
+         "js": [
+            "js/rn-format.js",
+            "content/clip-common.js",
+            "content/dom-to-md.js",
+            "content/gooood.js"
+         ],
+         "run_at": "document_idle"
       }
    ],
-   "description": "小红虾：将小红书笔记、图片、实况与视频，以及 Chiphell / 远景 / 恩山 / 耳机大家坛帖子、豆瓣影评、少数派文章、什么值得买文章、微信公众号文章、单条微博、下厨房菜谱保存到本地，自动生成 Rednote-Sharpen 格式 Markdown。",
+   "description": "小红虾：将小红书笔记、图片、实况与视频，以及 Chiphell / 远景 / 恩山 / 耳机大家坛帖子、豆瓣影评、少数派文章、什么值得买文章、微信公众号文章、澎湃新闻文章、单条微博、下厨房菜谱、蜂鸟摄影帖、色影无忌主站文章、ABBS 建筑帖、ArchDaily / 谷德建筑案例保存到本地，自动生成 Rednote-Sharpen 格式 Markdown。",
    "host_permissions": [
       "*://*.xiaohongshu.com/*",
       "*://cdnfile.sspai.com/*",
       "*://cdn-static.sspai.com/*",
       "*://*.doubanio.com/*",
-      "*://*.sinaimg.cn/*"
+      "*://*.sinaimg.cn/*",
+      "*://vv.video.qq.com/*",
+      "*://bbs.qn.img-space.com/*"
    ],
    "icons": {
       "16": "icons/icon16.png",
@@ -166,7 +260,7 @@
       "storage",
       "declarativeNetRequestWithHostAccess"
    ],
-   "version": "0.7.6",
+   "version": "0.7.8",
    "web_accessible_resources": [
       {
          "matches": [
@@ -179,10 +273,18 @@
             "*://*.sspai.com/*",
             "*://post.smzdm.com/*",
             "*://mp.weixin.qq.com/*",
+            "*://*.thepaper.cn/*",
             "*://*.xiachufang.com/*",
             "*://m.weibo.cn/*",
             "*://weibo.com/*",
-            "*://www.weibo.com/*"
+            "*://www.weibo.com/*",
+            "*://m.fengniao.com/*",
+            "*://bbs.fengniao.com/*",
+            "*://vision.xitek.com/*",
+            "*://www.abbs.com.cn/*",
+            "*://*.archdaily.com/*",
+            "*://*.archdaily.cn/*",
+            "*://*.gooood.cn/*"
          ],
          "resources": [
             "icons/icon.svg"
@@ -200,6 +302,11 @@
             "id": "weibo-referer",
             "enabled": true,
             "path": "rules/weibo-referer.json"
+         },
+         {
+            "id": "fengniao-referer",
+            "enabled": true,
+            "path": "rules/fengniao-referer.json"
          }
       ]
    }

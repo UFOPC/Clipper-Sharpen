@@ -37,6 +37,10 @@ ok(RN.kindOf({ counts: { images: 9, videos: 0 } }) === "图文", "9 图 0 视频
 ok(RN.kindOf({ counts: { images: 9, videos: 1 } }) === "图文+视频", "9 图 1 视频 → 图文+视频");
 ok(RN.kindOf({ counts: { images: 0, videos: 1 } }) === "视频", "0 图 1 视频 → 视频");
 ok(RN.kindOf({ counts: { images: 2, videos: 3 } }) === "图文+视频", "2 图 3 视频 → 图文+视频");
+ok(RN.kindOf({ counts: { images: 1, videos: 0, audios: 2 } }) === "图文+音频", "1 图 2 音频 → 图文+音频");
+ok(RN.kindOf({ counts: { images: 1, videos: 1, audios: 1 } }) === "图文+音视频", "图 + 视频 + 音频 → 图文+音视频");
+ok(RN.kindOf({ counts: { images: 0, videos: 0, audios: 1 } }) === "音频", "纯音频 → 音频");
+ok(RN.kindOf({ counts: { images: 0, videos: 1, audios: 1 } }) === "音视频", "视频 + 音频 → 音视频");
 
 console.log("\n[2] 没有媒体 / 没传 counts 时退回站方口径");
 ok(RN.kindOf({ counts: { images: 0, videos: 0 }, type: "video" }) === "视频", "站方 video → 视频");
@@ -48,6 +52,8 @@ for (const [counts, want] of [
   [{ images: 3, videos: 1 }, "图文+视频"],
   [{ images: 3, videos: 0 }, "图文"],
   [{ images: 0, videos: 1 }, "视频"],
+  [{ images: 1, videos: 0, audios: 1 }, "图文+音频"],
+  [{ images: 0, videos: 1, audios: 1 }, "音视频"],
 ]) {
   const text = RN.frontmatter({ title: "t", counts });
   ok(text.includes("\n类型: " + want + "\n"), `${JSON.stringify(counts)} → 类型: ${want}`);

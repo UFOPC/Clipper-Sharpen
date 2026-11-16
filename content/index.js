@@ -232,10 +232,13 @@
   }
 
   function fillPhotoPanel(container, panel, note) {
-    panel.classList.add("is-photo");
+    const cover = note?.type === "video";
+    /* 视频贴的封面行叠加在清晰度面板里，不能套用图文贴的 128px 窄面板。 */
+    panel.classList.toggle("is-photo", !cover);
     const row = panel.querySelector(".xhx-photo-row");
     const images = note && Array.isArray(note.imageList) ? note.imageList.filter((image) => image && image.width) : [];
     row.hidden = false;
+    row.querySelector(".xhx-photo-key").firstChild.nodeValue = cover ? "封面" : "图片";
     row.querySelector(".cnt").textContent = images.length ? images.length + " 张" : "无";
     if (!container.dataset.media) container.dataset.media = "1";
     row.querySelectorAll("button").forEach((button) => {
@@ -290,20 +293,26 @@
     const note = await ask({ type: "getNote", downloadId: noteId });
     const RN = window.__RN;
     const isVideo = !!(note && (note.type === "video" || note.video));
+    const strictVideo = note?.type === "video";
     const stream = note && note.video && note.video.media && note.video.media.stream;
     const list = RN && RN.videoOptions ? RN.videoOptions(stream) : [];
 
     if (!list.length) {
       /* 视频贴但一档都摊不出来（stream 结构变了、或页面还没把播放地址补进来）：
        * 仍然显示「视频清晰度 / 原始画质」，让用户看见已识别为视频；保存时后台自己挑最高档。 */
-      if (isVideo) {
-        renderQuality(container, panel, [{ res: "原始画质", url: "" }], 0);
+      if (isVideo) renderQuality(container, panel, [{ res: "原始画质", url: "" }], 0);
+      else {
+        fillPhotoPanel(container, panel, note);
         return;
       }
-      fillPhotoPanel(container, panel, note);
-      return;
+    } else {
+      renderQuality(container, panel, list, Math.max(0, RN.pickDefaultQuality ? RN.pickDefaultQuality(list) : 0));
     }
-    renderQuality(container, panel, list, Math.max(0, RN.pickDefaultQuality ? RN.pickDefaultQuality(list) : 0));
+
+    /* 只有严格 type=video 才把 imageList 当封面；图文混合笔记仍走原有图片逻辑。 */
+    if (strictVideo && note.imageList?.some((image) => image && image.width)) {
+      fillPhotoPanel(container, panel, note);
+    }
   }
 
   /* 小红书的作者行是 space-between：我们插进去的胶囊算第三个 flex 项，

@@ -180,8 +180,8 @@
   }
 
   /* 类型看「这条笔记里到底有什么」，而不是站方声明的作品形态。
-   *   有图有视频 → 图文+视频   值得买好文、Chiphell 帖子夹一段站内视频就是这种
-   *   只有视频   → 视频
+   *   有图有视频 → 图文+视频；音频按 counts.audios 参与判断，可组成图文+音频/图文+音视频
+   *   只有视频   → 视频；只有音频 → 音频
    *   只有图     → 图文
    *   一个媒体都没有（纯文字贴）→ 退回站方口径，别把正常笔记写成空
    * counts 数的是笔记本身有几个图几段视频，不是这次下载了几个 ——
@@ -192,8 +192,13 @@
     const counts = o.counts || {};
     const images = Number(counts.images) || 0;
     const videos = Number(counts.videos) || 0;
+    const audios = Number(counts.audios) || 0;
+    if (images && videos && audios) return "图文+音视频";
     if (images && videos) return "图文+视频";
+    if (images && audios) return "图文+音频";
+    if (videos && audios) return "音视频";
     if (videos) return "视频";
+    if (audios) return "音频";
     if (images) return "图文";
     return o.type === "video" ? "视频" : "图文";
   }

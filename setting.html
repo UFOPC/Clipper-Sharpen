@@ -19,7 +19,7 @@
     <section aria-label="支持的网站">
       <!-- 静态值只是兜底：setting.js 加载后会按 .sites 的条数重写，所以这里写错不会
            被测试抓到，加站时仍要手动一起改，否则首帧/脚本出错时显示的是假数字。 -->
-      <p class="section-label">已支持 <span id="site-count">11</span> 个网站</p>
+      <p class="section-label">已支持 <span id="site-count">17</span> 个网站</p>
       <!-- 顺序与 manifest 的 content_scripts.matches 一致：浏览器扩展详情页按那个顺序列权限，
            两边顺序一样，用户可以从上往下逐条对。 -->
       <ul class="sites">
@@ -32,8 +32,14 @@
         <li><strong>少数派</strong><code>sspai.com</code><span>数字生活文章</span></li>
         <li><strong>什么值得买</strong><code>post.smzdm.com</code><span>原创文章与晒物长文</span></li>
         <li><strong>微信公众号</strong><code>mp.weixin.qq.com</code><span>文章正文与图片</span></li>
+        <li><strong>澎湃新闻</strong><code>thepaper.cn</code><span>正文、原图、评论与内嵌音视频</span></li>
         <li><strong>微博</strong><code>m.weibo.cn</code><code>weibo.com</code><span>单条图文 / 组图（移动端；桌面版 /detail/ 实验）</span></li>
         <li><strong>下厨房</strong><code>xiachufang.com</code><span>菜谱用料、步骤图、成品图与视频菜谱</span></li>
+        <li><strong>蜂鸟摄影</strong><code>fengniao.com</code><span>移动/桌面作品帖、跨页原图与回复；后台代取防盗链图片</span></li>
+        <li><strong>色影无忌</strong><code>vision.xitek.com</code><span>主站资讯、赛事文章与原图</span></li>
+        <li><strong>ABBS建筑论坛</strong><code>abbs.com.cn</code><span>论坛、新闻、专题、图片、分页与回复</span></li>
+        <li><strong>ArchDaily</strong><code>archdaily.com / archdaily.cn</code><span>正文图、gallery/ 图库、公开音频预览与外部视频链接</span></li>
+        <li><strong>谷德设计网</strong><code>gooood.cn</code><span>案例、原图与公开视频；视频可独立跳过</span></li>
       </ul>
     </section>
     <section aria-label="下载目录结构">

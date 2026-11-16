@@ -342,10 +342,13 @@ async function extractNoteData(noteId, opts) {
   if (!note) return undefined;
 
   const noteType = note.type || "normal";
+  /* 视频笔记的 imageList 按封面/海报处理，由面板的「封面 下载/跳过」单独控制。
+   * 默认保留；skipMedia 在视频贴只排除封面，不会误删后面追加的视频或评论配图。 */
   const images = (Array.isArray(note.imageList) ? note.imageList : []).map(readImage).filter((image) => Number(image.width) > 0);
   const files = [];
   const useDom = noteType !== "video" && images.length > 0 && images.every((image) => !image.livePhoto) && domVideos.length === images.length;
-  images.forEach((image, index) => {
+  const saveImages = noteType !== "video" || !opts.skipMedia;
+  if (saveImages) images.forEach((image, index) => {
     files.push({ path: image.imageUrl, width: image.width, type: "note", video: false });
     if (image.livePhoto) files.push({ path: image.livePhoto, width: 0, type: "note", video: true });
     else if (useDom) files.push({ path: domVideos[index].src, width: 0, type: "note", video: true });
@@ -626,6 +629,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           files.push({ filename: data.mdFilename, text: data.md, mime: "text/markdown" });
         }
         return downloadList(files);
+      }
+      case "fetchText": {
+        /* 只给谷德适配器调用腾讯公开 getinfo；不做任意 URL 的通用代理。 */
+        const raw = message.data && message.data.url;
+        try {
+          const url = new URL(raw || "");
+          if (url.origin !== "https://vv.video.qq.com" || url.pathname !== "/getinfo") {
+            return { ok: false, error: "unsupported endpoint" };
+          }
+          const response = await fetch(url, { credentials: "omit" });
+          const text = await response.text();
+          if (text.length > 1024 * 1024) return { ok: false, error: "response too large" };
+          return { ok: response.ok, status: response.status, text };
+        } catch (error) {
+          return { ok: false, error: String(error?.message || error) };
+        }
       }
       case "fetchMedia": {
         /* 图床只认页面 Referer 时，内容脚本的 fetch 既被 CORS 拦、带不了来源，
