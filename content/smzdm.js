@@ -251,7 +251,13 @@
       if (blob.size > VIDEO_MAX) return { error: "体积 " + Math.round(blob.size / 1048576) + "MB 过大" };
       return { url: await blobToDataUrl(blob) };
     } catch (e) {
-      return { error: e && e.name === "AbortError" ? "超时 15s" : "跨域被拒" };
+      /* 别把所有失败都说成「跨域」：断网、DNS 失败、被 CC 拦截回 403、代理挂掉
+       * 全被那句话糊住，用户照着「跨域」去关扩展也修不好。分三类，其余原样带出。 */
+      if (e && e.name === "AbortError") return { error: "超时 15s" };
+      if (e instanceof TypeError || /Failed to fetch|NetworkError|Load failed/i.test(String(e?.message || e))) {
+        return { error: "跨域被拒或网络中断" };
+      }
+      return { error: String(e?.message || e || "取视频失败") };
     } finally {
       clearTimeout(timer);
     }
@@ -578,5 +584,5 @@
 
   tick();
   // 正文是服务端直出，不需要 MutationObserver；只在节点被冲掉时补挂
-  setInterval(tick, 1500);
+  RN.tickLoop(tick);
 })();

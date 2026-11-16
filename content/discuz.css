@@ -37,6 +37,24 @@
   cursor: default;
 }
 
+/* 运行中这一颗按钮是「取消」，必须看起来能点：实心红底、不降透明度。
+ * 选择器写得比 .xhx-dz-btn.is-busy 更具体，两条同时命中时以这条为准。 */
+.xhx-dz-btn.is-busy.is-running {
+  opacity: 1;
+  cursor: pointer;
+  background: #ef493d;
+  color: #fff;
+  border-color: #ef493d;
+}
+
+.xhx-dz-btn.is-running:hover {
+  background: #d93a2f;
+}
+
+.xhx-dz-btn.is-running img {
+  display: none;
+}
+
 .xhx-dz-btn img {
   width: 20px;
   height: 20px;

@@ -210,6 +210,7 @@
       {
          "matches": [
             "*://*.archdaily.com/zh/*",
+            "*://*.archdaily.com/cn/*",
             "*://*.archdaily.cn/cn/*",
             "*://*.archdaily.cn/zh/*"
          ],

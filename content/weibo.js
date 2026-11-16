@@ -339,5 +339,5 @@
 
   tick();
   new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
-  setInterval(tick, 1500);
+  RN.tickLoop(tick);
 })();

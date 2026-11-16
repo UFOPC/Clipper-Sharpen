@@ -382,5 +382,5 @@
 
   tick();
   /* SPA 站内跳转不重新加载 content script，轻量轮询只负责路径守卫与浮层增删。 */
-  setInterval(tick, 1500);
+  RN.tickLoop(tick);
 })();

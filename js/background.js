@@ -18,6 +18,39 @@ const endTask = (id) => {
 };
 const isCancelled = (id) => !!(id && tasks.has(id) && tasks.get(id).cancelled);
 
+/* fetchMedia 只代理这些站点图床。清单来自各站点适配器实际用到的域名——站点
+ * 自己贴出的图可能落在任意 CDN 编号子域上（img1/img2/wx1/tvax3…），逐个枚举
+ * 不现实，所以按「图床根域」放行一层后缀匹配；除此之外一律拒绝。
+ * 新增站点时按需往这里加根域，不要为了省事加 `.com` 这类宽通配。 */
+const MEDIA_SUFFIXES = [
+  ".xhscdn.com",       // 小红书
+  ".doubanio.com",     // 豆瓣
+  ".sinaimg.cn",       // 微博
+  ".sspai.com",        // 少数派
+  ".img-space.com",    // 蜂鸟
+  ".adsttc.com",       // ArchDaily
+  ".gooood.cn",        // 谷德
+  ".zdmimg.com",       // 什么值得买图床
+  ".smzdm.com",        // 什么值得买视频
+  ".thepaper.cn",      // 澎湃
+  ".chuimg.com",       // 下厨房
+];
+
+function mediaHostAllowed(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (error) {
+    return false;
+  }
+  /* 协议也在这里判，不只靠调用方前面那句 /^https?:/：白名单函数单独拿出来看
+   * 也该是完整的「这个 URL 能不能代理」，否则换个调用点就漏了。 */
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase();
+  if (!host) return false;
+  return MEDIA_SUFFIXES.some((suffix) => host === suffix.slice(1) || host.endsWith(suffix));
+}
+
 function openDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
@@ -720,17 +753,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           endTask(message.downloadId);
         }
       }
-      /* downloadFiles / downloadUrl 不带 taskId，因此返回里的 cancelled 恒为 false：
-       * 这两条消息来自没有取消入口的页面（豆瓣/微博/少数派/下厨房/值得买/Discuz/公众号），
-       * 消息里也没有 downloadId 可以挂任务，硬接只会造出一个永远不成立的钩子。
-       * 若将来某页要加取消：调用时在 message.data 里带上 downloadId，
-       * 这里换成 startTask(downloadId) / downloadList(files, downloadId) / finally endTask 即可。 */
+      /* downloadFiles / downloadUrl 默认不带 taskId，返回里的 cancelled 恒为 false。
+       * 这两条消息原本来自没有取消入口的页面（豆瓣/微博/少数派/下厨房/值得买/Discuz/公众号），
+       * 消息里也没有 downloadId 可以挂任务。现在 clip-common 的 deliver 会带上
+       * data.taskId（同一套 downloadId），这里就顺手接上——带则逐轮问取消，
+       * 不带则维持原样，不造一个永远不成立的钩子。 */
       case "downloadFiles": {
         const files = message.data && message.data.files || [];
+        const taskId = (message.data && message.data.taskId) || "";
         /* 空批次直接回成功：调用方按批下发，一页图里失败的图已经进了 failedWrite，
          * 不会再发空批。真收到空批时不该谎报失败（与 downloadList 的空清单判定区分开）。 */
         if (!files.length) return { done: 0, failed: [], cancelled: false };
-        return downloadList(files);
+        if (!taskId) return downloadList(files);
+        startTask(taskId);
+        try {
+          return await downloadList(files, taskId);
+        } finally {
+          endTask(taskId);
+        }
       }
       case "downloadUrl": {
         const data = message.data || {};
@@ -762,12 +802,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
          * 补 Referer）能拿到 200。取回字节再交给内容脚本拼 data: URL，绕开跨域读取限制。
          *
          * error 串是对 content/ 的公开契约，会原样写进 md 尾注与状态栏，改动前先通知对侧：
-         *   missing url / unsupported scheme / HTTP <status> / not image: <content-type> /
-         *   too large / timeout / <底层异常 message>
+         *   missing url / unsupported scheme / host not allowed / HTTP <status> /
+         *   not image: <content-type> / too large / timeout / <底层异常 message>
          * 一律短、英文、可直接展示；要中文化请在 content 侧映射，别改这里的字面量。 */
         const url = message.data && message.data.url;
         if (!url) return { ok: false, error: "missing url" };
         if (!/^https?:/i.test(url)) return { ok: false, error: "unsupported scheme" };
+        /* 只代理已知图床。这个接口本质上是「让扩展带着 host 权限替任意页面取任意
+         * URL」，不设白名单就等于把 SW 变成一个只挡 content-type 的开放代理；
+         * 页面上的第三方脚本或将来某个站点的注入都能拿它扫内网/探端口（返回的
+         * 错误码就足以区分服务是否在跑）。白名单只放本扩展各站点实际使用的图床，
+         * 新增站点时按需往这里加域名。 */
+        if (!mediaHostAllowed(url)) return { ok: false, error: "host not allowed" };
         const MAX_BYTES = 15 * 1024 * 1024;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 15000);
@@ -778,7 +824,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
            * 否则 base64 出来的是网页，存成 .png 一张都打不开。 */
           const type = response.headers.get("content-type") || "";
           if (!/^image\//i.test(type)) return { ok: false, error: "not image: " + (type || "(none)") };
-          if (Number(response.headers.get("content-length")) > MAX_BYTES) return { ok: false, error: "too large" };
+          /* content-length 可能不存在（chunked/压缩），Number(null) 是 0 而不是
+           * NaN，直接比会静默跳过预检；写死 || 0 让语义显式。真正的上限仍由下面
+           * 读取后的字节数兜底。 */
+          if (Number(response.headers.get("content-length") || 0) > MAX_BYTES) return { ok: false, error: "too large" };
           const buffer = await response.arrayBuffer();
           if (buffer.byteLength > MAX_BYTES) return { ok: false, error: "too large" };
           const bytes = new Uint8Array(buffer);

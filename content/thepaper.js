@@ -445,8 +445,12 @@
         missing.push(index + 1);
         return "";
       }
-      /* Obsidian 对音频使用 wikilink 嵌入才能稳定显示播放器；图片/视频沿用项目原有 Markdown 语法。 */
-      if (info.media[index].kind === "audio") return `![[${entries[index].path}]]`;
+      /* 音频也写标准 Markdown 引用，与图片/视频保持同一套语法。
+       * 这里原先用 Obsidian 的 `![[...]]` wikilink（理由是想稳定出播放器），但
+       * wikilink 只认 vault 根相对路径，而笔记可能落在 <日期>_<标题>/ 子目录里，
+       * `![[media/x.mp3]]` 在那种情况下根本解析不到文件——语法不统一还是死链。
+       * 标准写法至少是相对笔记的正确路径，点开即可；真要播放器就在 Obsidian 里
+       * 手动换成 wikilink 形式，代价由使用者自己决定。 */
       return `![${entries[index].label}](${RN.rel(entries[index].path)})`;
     });
 
@@ -679,13 +683,13 @@
     window.addEventListener("resize", placeDock);
 
     /* Next.js 详情页之间可走客户端跳转；同一个 dock 复用，点击时重新读当前文章。 */
-    setInterval(() => {
+    RN.tickLoop(() => {
       /* 纯视频页没有 cententWrap，但 readArticle() 可直接读 __NEXT_DATA__.content。
        * 这里只看路由；数据尚未就绪时保留按钮，由点击后的读取结果给提示，避免闪烁。 */
       const valid = ARTICLE_RE.test(location.pathname);
       dock.hidden = !valid;
       if (valid) placeDock();
-    }, 1500);
+    });
   }
 
   loadPrefs().then(mount);

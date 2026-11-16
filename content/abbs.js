@@ -22,6 +22,15 @@
     const floors = [...doc.querySelectorAll("tr.odd")].filter((row) => row.querySelector("span.javascript"));
     if (!id || !floors.length) return null;
     const cellsOf = (row) => row.querySelectorAll(":scope > td");
+    /* 楼主判定：优先用 uid，拿不到才退回「只认第一楼」。
+     * 曾经拿昵称判（author === nick），但 ABBS 允许重名，同名网友的回帖会被
+     * 并进正文；匿名回帖更惨——大家都叫「匿名」，全都被当成楼主的话。 */
+    const uidOf = (row) => {
+      const link = row.querySelector('a[href*="user.php"], a[href*="uid="]');
+      const m = /[?&](?:id|uid)=(\d+)/.exec((link && link.getAttribute("href")) || "");
+      return m ? m[1] : "";
+    };
+    const opUid = uidOf(floors[0]);
     const firstCells = cellsOf(floors[0]);
     const nick = squash(firstCells[0]?.querySelector("b")?.textContent) || "匿名";
     const firstStamp = /\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}(?::\d{2})?)?/.exec(firstCells[1]?.textContent || "")?.[0] || "";
@@ -29,13 +38,18 @@
     const images = [];
     const bodies = [];
     const comments = [];
+    const warnings = [];
+    if (!opUid) {
+      warnings.push("未能识别楼主 uid，只把第一楼当正文，同作者的其他楼层按回帖处理。");
+    }
 
-    for (const row of floors) {
+    floors.forEach((row, index) => {
       const cells = cellsOf(row);
       const author = squash(cells[0]?.querySelector("b")?.textContent) || "匿名";
       const stamp = /\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}(?::\d{2})?)?/.exec(cells[1]?.textContent || "")?.[0] || "";
       const root = row.querySelector("span.javascript");
-      if (author === nick) {
+      const isOp = opUid ? uidOf(row) === opUid : index === 0;
+      if (isOp) {
         const part = globalThis.__XHX_DOM.walk(root, {
           base: loc.href,
           offset: offset + images.length,
@@ -51,7 +65,7 @@
         const text = clean(root.textContent);
         if (text) comments.push({ author, time: stamp, text, replies: [] });
       }
-    }
+    });
 
     const page = Number(pageUrl.searchParams.get("ppg")) || 1;
     const nextLink = [...doc.querySelectorAll("a")].find((a) => {
@@ -74,7 +88,7 @@
       next: nextLink ? abs(nextLink.getAttribute("href"), loc.href) : "",
       page,
       url: canonical.href,
-      warnings: [],
+      warnings,
     };
   }
 

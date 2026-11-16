@@ -318,6 +318,12 @@ done
 Chrome 对非法 filename 是直接 reject，不是截断）与 `unit-download`（md / comments.json
 必须确知写完了才算成功，视频大图不等待）。
 
+`unit-clip-cancel` 守的是「取消」这件事在两边都成立：content 侧每批开头停手、
+background 侧每轮问一次 `isCancelled(taskId)`，并且取消之后仍要把半成品笔记写下去
+（盘上散着一堆没有索引的图最难受）。它同时钉住一条容易退化的推论：后台回
+`cancelled:true` 的那一批不能算成功——`downloadList` 只回一个计数、不回文件名，
+把计数对回文件名就只能靠猜，猜错就是悬空链接。
+
 **改正文序列化逻辑时先看基准**。所有站点共用 `content/dom-to-md.js` 这一份 walker，
 它的行为由 `test/dump-md.mjs` 的 golden 基准守着：
 

@@ -322,5 +322,50 @@
     return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
 
-  globalThis.__RN = { name, dateParts, base, assetBase, dir, layout, mediaPath, commentPath, rel, kindOf, markdown, frontmatter, videoOptions, pickDefaultQuality, commentsMarkdown, fetchFailNote, writeFailNote };
+  /* 面板补挂轮询：9 个站点脚本都要一个「节点被站点重新渲染冲掉时补回来」的
+   * 定时器，以前各写各的 `setInterval(tick, 1500)`。裸 setInterval 有两个毛病：
+   *   ① 标签页切到后台、或窗口最小化后仍在跑——十几分钟下来白烧 CPU；
+   *   ② 页面进 bfcache 或被卸载时没人 clear，扩展上下文失效后每次 tick 都抛
+   *      "Extension context invalidated"，控制台刷屏。
+   * 这里统一成：不可见时跳过这一跳、pagehide 时停表。页面从 bfcache 回来
+   * 会触发 pageshow，顺手把表重新起上，否则补挂功能就永久哑了。 */
+  function tickLoop(tick, intervalMs = 1500) {
+    /* 只跑在 content script 里；service worker 没有 document，调用方也不该调。 */
+    if (typeof document === "undefined" || typeof window === "undefined") return null;
+    let timer = 0;
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(() => {
+        if (document.visibilityState !== "visible") return;
+        try {
+          tick();
+        } catch (error) {
+          /* 扩展被重载后旧脚本的每次 tick 都会抛，停表比刷屏好 */
+          clearInterval(timer);
+          timer = 0;
+        }
+      }, intervalMs);
+    };
+    const stop = () => {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = 0;
+    };
+    window.addEventListener("pagehide", stop);
+    window.addEventListener("pageshow", start);
+    /* 标签页在后台时也停表；回到前台由 visibilitychange 重新起 */
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") start();
+      else stop();
+    });
+    start();
+    return {
+      stop,
+      get running() {
+        return !!timer;
+      },
+    };
+  }
+
+  globalThis.__RN = { name, dateParts, base, assetBase, dir, layout, mediaPath, commentPath, rel, kindOf, markdown, frontmatter, videoOptions, pickDefaultQuality, commentsMarkdown, fetchFailNote, writeFailNote, tickLoop };
 })();

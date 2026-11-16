@@ -33,6 +33,13 @@
     const withMedia = options.withMedia;
     const withVideos = options.withVideos !== false;
     const withComments = options.withComments;
+    /* 取消：9 个共用 clip-common 的站点以前都没有出口，点了「剪藏」只能等它跑完。
+     * 现在每次 run() 生成一个 taskId，逐批下发给 background 的 downloadFiles，
+     * 用户在面板上点「取消」时两件事同时发生——这里置位 shouldStop，那边
+     * background 收到 cancel 消息后 downloadList 每轮都会问一次。
+     * 两处都要，缺一个会出现「界面说取消了、文件还在往下落」。 */
+    const taskId = options.taskId || "";
+    const shouldStop = typeof options.shouldStop === "function" ? options.shouldStop : () => false;
     let info = initial;
     const warnings = [...(initial.warnings || [])];
     if (config.expand) {
@@ -58,11 +65,14 @@
     const videoWritten = new Set();
     const failedWrite = [];
     let mediaError = "";
+    let cancelled = false;
 
     if (withMedia) {
       try {
         let done = 0;
         for (let i = 0; i < images.length; i += BATCH) {
+          /* 每批开头问一次：已经点过取消就别再取图、别再写盘。 */
+          if (shouldStop()) { cancelled = true; break; }
           const batch = [];
           const batchIdx = [];
           for (let j = i; j < Math.min(i + BATCH, images.length); j++) {
@@ -74,9 +84,16 @@
               failedWrite.push({ filename: layout.prefix + names[j], error: String(error?.message || error) });
             }
           }
-          const wrote = await chrome.runtime.sendMessage({ type: "downloadFiles", data: { files: batch } });
+          const wrote = await chrome.runtime.sendMessage({ type: "downloadFiles", data: { files: batch, taskId } });
+          /* 后台说它按取消收尾了，就不必再往下走。
+           * 这一批也不能算成功：downloadList 只回一个 done 计数，不告诉我们是
+           * 哪几个文件落成了盘，没法把 done 对回文件名。宁可误判成「没保存」
+           * 让正文少一条引用（用户看得见，也知道去补），也不能猜出一道悬空链接。 */
+          if (wrote?.cancelled) { cancelled = true; }
           const bad = new Set();
-          if (wrote?.error) {
+          if (wrote?.cancelled) {
+            for (const j of batchIdx) bad.add(j);
+          } else if (wrote?.error) {
             for (const j of batchIdx) {
               bad.add(j);
               failedWrite.push({ filename: layout.prefix + names[j], error: wrote.error });
@@ -91,23 +108,29 @@
           for (const j of batchIdx) if (!bad.has(j)) written.add(j);
           done += batch.length;
           if (onProgress) onProgress(done, images.length);
+          if (cancelled) break;
         }
       } catch (error) {
         mediaError = String(error?.message || error);
       }
     }
 
-    if (withVideos) {
+    if (withVideos && !cancelled) {
       for (let i = 0; i < videos.length; i += BATCH) {
+        if (shouldStop()) { cancelled = true; break; }
         const batch = [];
         const batchIdx = [];
         for (let j = i; j < Math.min(i + BATCH, videos.length); j++) {
           batch.push({ filename: layout.prefix + videoNames[j], url: videos[j].url });
           batchIdx.push(j);
         }
-        const wrote = await chrome.runtime.sendMessage({ type: "downloadFiles", data: { files: batch } });
+        const wrote = await chrome.runtime.sendMessage({ type: "downloadFiles", data: { files: batch, taskId } });
+        if (wrote?.cancelled) cancelled = true;
         const bad = new Set();
-        if (wrote?.error) {
+        /* 与图片同理：取消的这批不回文件名，只能整体判失败 */
+        if (wrote?.cancelled) {
+          for (const j of batchIdx) bad.add(j);
+        } else if (wrote?.error) {
           for (const j of batchIdx) {
             bad.add(j);
             failedWrite.push({ filename: layout.prefix + videoNames[j], error: wrote.error });
@@ -121,6 +144,7 @@
         }
         for (const j of batchIdx) if (!bad.has(j)) videoWritten.add(j);
         if (onProgress) onProgress(images.length + Math.min(i + BATCH, videos.length), images.length + videos.length);
+        if (cancelled) break;
       }
     }
 
@@ -159,6 +183,11 @@
     if (withComments && info.commentError) {
       body += `\n\n> 评论抓取可能不完整（${info.commentError}）。`;
     }
+    if (cancelled) {
+      /* 取消后仍要把已经落盘的部分写成笔记，否则用户点了取消、盘上却是一堆
+       * 没有索引的散图。正文里明确说这是半成品，并交代怎么补全。 */
+      body += `\n\n> 已取消：媒体只保存到第 ${written.size + videoWritten.size} 项，正文尚未抓全。`;
+    }
     if (withComments) {
       const comments = RN.commentsMarkdown(info.comments || []);
       if (comments) body += "\n\n" + comments;
@@ -190,6 +219,7 @@
       dir: layout.prefix.replace(/\/$/, ""),
       failedWrite,
       mediaError,
+      cancelled,
     };
   }
 
@@ -203,6 +233,12 @@
     let countEl = null;
     let videoRow = null;
     let videoCountEl = null;
+    /* 当前正在跑的任务 id；空串表示空闲。run() 里生成、finally 里清掉，
+     * 按钮靠它决定此刻是「剪藏」还是「取消」。
+     * stopRequested 必须和它同作用域：requestCancel 是按钮事件，run 是另一个
+     * 调用栈，放在 run 里取消动作就够不着了。 */
+    let runTaskId = "";
+    let stopRequested = false;
 
     function loadPrefs() {
       try {
@@ -283,13 +319,28 @@
       closePanel();
       button.dataset.busy = "1";
       button.classList.add("is-busy");
+      /* 每次运行一个任务 id：content 侧用它判断「该不该继续下一批」，
+       * background 侧用它挂取消标志（downloadFiles 会带上它）。
+       * 用时间戳而不是自增计数器：脚本可能被站点重渲染重复注入，模块级计数器
+       * 在两个实例里会撞号，时间戳加随机后缀基本不会。 */
+      const taskId = `${config.key}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      stopRequested = false;
+      runTaskId = taskId;
       const mediaTotal = (prefs.media ? info.images?.length || 0 : 0) + (prefs.video ? info.videos?.length || 0 : 0);
       status.textContent = mediaTotal ? `正在整理 0/${mediaTotal} 项媒体…` : "正在整理正文…";
       try {
         const result = await deliver(config, info, (done, total) => {
           status.textContent = `正在整理 ${done}/${total} 项媒体…`;
-        }, { withMedia: prefs.media, withVideos: prefs.video, withComments });
-        if (!result.mdSaved) status.textContent = "Markdown 未保存，请重试";
+        }, {
+          withMedia: prefs.media,
+          withVideos: prefs.video,
+          withComments,
+          taskId,
+          shouldStop: () => stopRequested,
+        });
+        if (result.cancelled) {
+          status.textContent = `已取消，已保存 ${result.media}/${result.total} 项媒体（正文不完整）`;
+        } else if (!result.mdSaved) status.textContent = "Markdown 未保存，请重试";
         else {
           const parts = [];
           if (prefs.media || prefs.video) parts.push(`${result.media}/${result.total} 项媒体`);
@@ -301,10 +352,38 @@
       } catch (error) {
         status.textContent = "保存失败：" + String(error?.message || error);
       } finally {
+        runTaskId = "";
         button.dataset.busy = "";
         button.classList.remove("is-busy");
+        renderCancel();
         setTimeout(() => { status.textContent = ""; }, 8000);
       }
+    }
+
+    /* 运行中把「剪藏」就地变成「取消」：不给额外按钮，免得界面上多一行；
+     * 鼠标移上去就能点，取消后按钮自己恢复。 */
+    function renderCancel() {
+      if (!button) return;
+      const busy = !!runTaskId;
+      button.classList.toggle("is-running", busy);
+      const label = button.querySelector("span");
+      if (label) label.textContent = busy ? "取消" : "剪藏";
+      button.title = busy ? "正在保存，点此取消" : `保存这篇${config.source}内容`;
+    }
+
+    function requestCancel(event) {
+      if (!runTaskId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const id = runTaskId;
+      /* 两边都要通知：本地置位（下一批不再取图），后台登记取消（downloadList
+       * 每轮会问）。只通知一边的话，会出现「界面说取消了、文件还在落」或
+       * 「本批停了、后台还在核」的错位。 */
+      stopRequested = true;
+      try {
+        chrome.runtime.sendMessage({ type: "cancel", downloadId: id }).catch(() => {});
+      } catch (error) {}
+      if (status) status.textContent = "正在取消…";
     }
 
     function create() {
@@ -374,7 +453,12 @@
       document.addEventListener("click", (event) => {
         if (!panel.hidden && !dock.contains(event.target)) closePanel();
       });
-      button.addEventListener("click", run);
+      /* 一个按钮两种身份：空闲时是「剪藏」，跑起来后就地变成「取消」。
+       * 不给第二个按钮——站点上本来就挤，多一个按钮比多一段提示更碍事。 */
+      button.addEventListener("click", (event) => {
+        if (runTaskId) requestCancel(event);
+        else run(event);
+      });
       for (const action of panel.querySelectorAll(".xhx-dz-go")) action.addEventListener("click", run);
 
       dock.append(button, panel, status);
@@ -382,6 +466,7 @@
       loadPrefs();
       renderSeg();
       renderHint();
+      renderCancel();
       const place = () => {
         const anchor = document.querySelector("h1, h3, article");
         const top = anchor ? anchor.getBoundingClientRect().top + 8 : 112;
@@ -389,15 +474,16 @@
       };
       place();
       window.addEventListener("resize", place);
-      setInterval(() => {
+      RN.tickLoop(() => {
         dock.hidden = !config.match.test(location.pathname);
         if (!dock.hidden) place();
-      }, 1500);
+      });
     }
 
     create();
-    /* 页面异步到位或客户端跳转时再尝试一次；已建 dock 不重复创建。 */
-    setInterval(create, 1800);
+    /* 页面异步到位或客户端跳转时再尝试一次；已建 dock 不重复创建。
+     * 用 tickLoop 而不是裸 setInterval：后台标签页不烧 CPU，卸载时自动停表。 */
+    RN.tickLoop(create, 1800);
   }
 
   globalThis.__XHX_CLIP = { mount };
