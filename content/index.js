@@ -104,7 +104,8 @@
     let writeError = false;
     try {
       if (withComment && !loggedOut) await expandAllComments();
-      await ask({ type: "clearData" });
+      /* 必须带 downloadId：不带会清空整个暂存库，把另一个标签页正在保存的任务也删掉。 */
+      await ask({ type: "clearData", downloadId });
       if (cancelled) return;
       await ask({
         type: "saveData",

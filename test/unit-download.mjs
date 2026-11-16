@@ -10,13 +10,15 @@
  *   3 秒内什么都没有            → 按成功（宁可漏报，不把杀软扫尾误判成失败）
  * 视频/大图不进这条路：等待会把 service worker 吊在一次长下载上。
  *
- * 这个用例守五件事（后三条是行为契约，只断结果不够）：
+/* 这个用例守八件事（后几条是行为契约，只断结果不够）：
  *   ① interrupted → failed 带 error，且不影响同一批里的其他文件
  *   ② complete → failed 为空
  *   ③ 一直 in_progress → 超时按成功，且**耗时 ≥ 3000ms**（证明等待真的发生）
- *   ④ 大图 → **耗时 < 100ms**（证明根本没走等待）
+ *   ④ 媒体不进 3 秒长等待，但仍要批量核对：in_progress **不算失败**
  *   ⑤ comments.json 同样走等待，并且**事件一到就收尾**（不等满 3 秒）
  *   ⑥ 事件全错过、3s 后才是 interrupted → 超时点的终局校验必须抓到（否则误报成功）
+ *   ⑦ 媒体 interrupted → 必须进 failed（改之前这里一律报成功，md 里留下悬空链接）
+ *   ⑧ 媒体查不到下载记录 → 必须进 failed（核不上就是核不上，宁可让引用消失）
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -46,6 +48,48 @@ const plan = [];
 const states = new Map();
 const handlers = new Set();
 
+/* ---------- 极简 IndexedDB 桩 ----------
+ * background.js 的暂存清单走 keyval-store，[11] 要验证「download 从库里取不到清单」
+ * 时的行为，所以这里必须真的能 get/put/delete。只实现用到的那三个方法：
+ * 每个操作返回一个带 result 的 request，事务在下一个微任务 complete。
+ */
+const store = new Map();
+const fakeRequest = (compute) => {
+  const request = {};
+  queueMicrotask(() => {
+    try {
+      request.result = compute();
+    } catch (error) {
+      request.error = error;
+    }
+  });
+  return request;
+};
+const fakeStore = {
+  get: (key) => fakeRequest(() => store.get(key)),
+  put: (value, key) => fakeRequest(() => { store.set(key, value); return key; }),
+  delete: (key) => fakeRequest(() => { store.delete(key); return undefined; }),
+  clear: () => fakeRequest(() => { store.clear(); return undefined; }),
+};
+const fakeDb = {
+  objectStoreNames: { contains: () => true },
+  createObjectStore: () => fakeStore,
+  transaction: () => {
+    const transaction = {};
+    Object.defineProperty(transaction, "objectStore", { value: () => fakeStore });
+    queueMicrotask(() => queueMicrotask(() => transaction.oncomplete && transaction.oncomplete()));
+    return transaction;
+  },
+  close: () => {},
+};
+globalThis.indexedDB = {
+  open: () => {
+    const request = { result: fakeDb };
+    queueMicrotask(() => request.onsuccess && request.onsuccess());
+    return request;
+  },
+};
+
 globalThis.chrome = {
   runtime: { onMessage: { addListener(fn) { listener = fn; } } },
   scripting: { async executeScript() { return [{ result: undefined }]; } },
@@ -54,7 +98,9 @@ globalThis.chrome = {
       calls.push(options);
       const id = ++seq;
       const spec = plan.shift() || { search: "complete" };
-      states.set(id, spec);
+      /* spec.missing：条目建得出来但 Chrome 那边查不到记录（真实场景是记录被清理/竞态），
+       * 用来测「核不上就报失败」。所以这条不登记进 states。 */
+      if (!spec.missing) states.set(id, spec);
       if (spec.emit) {
         setTimeout(() => {
           const delta = { id, state: { current: spec.emit.state } };
@@ -65,22 +111,34 @@ globalThis.chrome = {
       return id;
     },
     async search({ id: wanted }) {
-      const spec = states.get(wanted) || {};
-      let state = spec.search || "complete";
-      let error = spec.error;
-      /* searchSeq 按调用顺序消费：第 1 次是监听落地兜竞态，第 2 次是 3s 超时点的终局校验。
-       * 元素可以是 state 字符串，也可以是 { state, error }。 */
-      if (Array.isArray(spec.searchSeq) && spec.searchSeq.length) {
-        const next = spec.searchSeq.shift();
-        if (typeof next === "string") state = next;
-        else if (next && typeof next === "object") {
-          state = next.state || state;
-          error = next.error || error;
+      /* 媒体核对走批量查询（id 是数组），md 走单条。两种都支持。 */
+      const ids = Array.isArray(wanted) ? wanted : [wanted];
+      const specOf = (id) => {
+        const spec = states.get(id) || {};
+        let state = spec.search || "complete";
+        let error = spec.error;
+        /* searchSeq 按调用顺序消费：第 1 次是监听落地兜竞态，第 2 次是 3s 超时点的终局校验。
+         * 元素可以是 state 字符串，也可以是 { state, error }。 */
+        if (Array.isArray(spec.searchSeq) && spec.searchSeq.length) {
+          const next = spec.searchSeq.shift();
+          if (typeof next === "string") state = next;
+          else if (next && typeof next === "object") {
+            state = next.state || state;
+            error = next.error || error;
+          }
         }
+        return { state, error };
+      };
+      const out = [];
+      for (const id of ids) {
+        const spec = states.get(id);
+        if (!spec) continue;                 // 记录不存在 → 不返回条目
+        const { state, error } = specOf(id);
+        const item = { id, state };
+        if (error) item.error = error;
+        out.push(item);
       }
-      const item = { state };
-      if (error) item.error = error;
-      return [item];
+      return out;
     },
     onChanged: {
       addListener(fn) { handlers.add(fn); },
@@ -90,7 +148,6 @@ globalThis.chrome = {
 };
 
 await import(pathToFileURL(path.join(EXT, "js/background.js")).href);
-
 const ask = (message) => new Promise((resolve) => listener(message, { tab: { id: 7 } }, resolve));
 const md = (filename = "标题/a.md") => ({ type: "downloadFiles", data: { files: [{ filename, text: "# x", mime: "text/markdown" }] } });
 
@@ -116,13 +173,13 @@ let took = Date.now() - t0;
 ok(res.done === 1 && res.failed.length === 0, "超时按成功，不误报");
 ok(took >= 3000, `耗时 ${took}ms ≥ 3000ms（有界等待确实发生了）`);
 
-console.log("\n[4] 大图不进等待路径");
-plan.push({ search: "in_progress" }); // 若误入等待路径会卡满 3 秒
+console.log("\n[4] 媒体不卡 3 秒长等待，但仍要核对");
+plan.push({ search: "in_progress" }); // 仍在写：不算失败，只补等一次 800ms
 t0 = Date.now();
 res = await ask({ type: "downloadFiles", data: { files: [{ filename: "images/a.jpg", url: "https://cdn.test/a.jpg" }] } });
 took = Date.now() - t0;
-ok(took < 100, `大图耗时 ${took}ms < 100ms`);
-ok(res.done === 1 && res.failed.length === 0, "大图照常计成功");
+ok(took < 2000, `媒体耗时 ${took}ms < 2000ms（没走 3 秒长等待）`);
+ok(res.done === 1 && res.failed.length === 0, "仍在写的媒体按成功算，不误报");
 
 console.log("\n[5] comments.json 也走等待，且事件一到就收尾");
 plan.push({ search: "in_progress", emit: { state: "complete", after: 30 } });
@@ -164,6 +221,27 @@ ok(slow.failed.length === 1, "超时点查到 interrupted 时按失败报（改�
 ok(slow.failed[0] && slow.failed[0].error === "FILE_NO_SPACE", "error 原样透传：" + (slow.failed[0] || {}).error);
 ok(slow.done === 0, "done 不计这条");
 ok(dt8 >= 3000 && dt8 < 6000, `等待仍有界、没被拖长（实际 ${dt8}ms）`);
+
+console.log("\n[9] 媒体 interrupted 必须进 failed（改之前一律报成功）");
+plan.push({ search: "interrupted", error: "FILE_NO_SPACE" });
+res = await ask({ type: "downloadFiles", data: { files: [{ filename: "images/full.jpg", url: "https://cdn.test/full.jpg" }] } });
+ok(res.failed.length === 1, "磁盘满的图片进 failed");
+ok(res.failed[0] && res.failed[0].error === "FILE_NO_SPACE", "error 原样透传：" + (res.failed[0] || {}).error);
+ok(res.failed[0] && res.failed[0].filename === "images/full.jpg", "failed 里带得出是哪个文件");
+ok(res.done === 0, "done 不计这条");
+
+console.log("\n[10] 媒体查不到下载记录 → 失败");
+plan.push({ missing: true });
+res = await ask({ type: "downloadFiles", data: { files: [{ filename: "images/ghost.jpg", url: "https://cdn.test/ghost.jpg" }] } });
+ok(res.failed.length === 1, "核不上记录时按失败报");
+ok(res.done === 0, "done 不计这条");
+
+console.log("\n[11] 空清单不能被读成成功");
+res = await ask({ type: "downloadFiles", data: { files: [] } });
+ok(res.done === 0 && res.failed.length === 0, "downloadFiles 空批仍回成功（各站按批下发，空批是正常的）");
+const empty = await ask({ type: "download", downloadId: "no-such-task" });
+ok(empty.failed.length === 1, "download 取到空清单必须报失败，不能报「已保存」");
+ok(empty.done === 0, "空清单 done 为 0");
 
 console.log(fails.length ? `\n✗ ${fails.length} 项未通过` : "\n✓ 全部通过");
 if (fails.length) process.exit(1);

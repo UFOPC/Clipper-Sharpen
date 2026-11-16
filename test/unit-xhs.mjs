@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -69,9 +69,12 @@ globalThis.chrome = {
     },
     /* 后台对小文件（md / comments.json）会等 onChanged 收尾再报成功。
      * 这里给一个「立即完成」的双：settleDownload 先挂监听、再查一次 search，
-     * 双返回 complete 就走快路径，用例不必真的等 3 秒。 */
-    async search() {
-      return [{ state: "complete" }];
+     * 双返回 complete 就走快路径，用例不必真的等 3 秒。
+     * 媒体走批量核对（id 是数组），返回的条目必须带 id —— 后台按 id 对账，
+     * 少这个字段就会被当成「查不到记录」而报失败。 */
+    async search({ id: wanted }) {
+      const ids = Array.isArray(wanted) ? wanted : [wanted];
+      return ids.filter((id) => id != null).map((id) => ({ id, state: "complete" }));
     },
     onChanged: { addListener() {}, removeListener() {} },
   },
@@ -134,7 +137,7 @@ setState(baseNote, comments);
 const raw = await route({ type: "getNote", downloadId: "note1" });
 assert.equal(raw.title, "标题");
 
-await route({ type: "clearData" });
+await route({ type: "clearData", downloadId: "note1" });
 await route({ type: "saveData", downloadId: "note1", withComment: true, rnOnly: true });
 const withComments = values.get("note1:rn").files;
 const media = withComments.filter((file) => file.url);
@@ -254,7 +257,7 @@ assert.deepEqual(
 );
 
 setState(baseNote);
-await route({ type: "clearData" });
+await route({ type: "clearData", downloadId: "note1" });
 let release;
 extractionGate = new Promise((resolve) => { release = resolve; });
 const pending = route({ type: "saveData", downloadId: "note1", rnOnly: true });
@@ -267,7 +270,7 @@ assert.equal(values.has("note1:rn"), false, "取消后不得写入暂存清单")
 
 /* 标题里的空白与半角/全角括号不得进入目录或文件名；MD 正文标题仍保留原文。 */
 setState({ ...baseNote, title: "标题 （带） [空格]" });
-await route({ type: "clearData" });
+await route({ type: "clearData", downloadId: "note1" });
 await route({ type: "saveData", downloadId: "note1", rnOnly: true });
 const cleanedFiles = values.get("note1:rn").files;
 const cleanedMd = cleanedFiles.find((file) => file.mime === "text/markdown");
@@ -281,7 +284,7 @@ assert.ok(cleanedMd.text.includes("# 标题 （带） [空格]"), "清洗只作�
 
 /* 无标题笔记使用作者与发布日期兜底目录，不能散落下载根目录。 */
 setState({ ...baseNote, title: "" });
-await route({ type: "clearData" });
+await route({ type: "clearData", downloadId: "note1" });
 await route({ type: "saveData", downloadId: "note1", rnOnly: true });
 const untitled = values.get("note1:rn").files;
 assert.ok(untitled.every((file) => file.filename.startsWith("未命名文件_作者_2025.11.01/")), "无标题时所有产物进入带作者和日期的兜底目录");

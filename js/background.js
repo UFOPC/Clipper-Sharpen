@@ -61,8 +61,9 @@ async function useStore(mode, operation) {
 
 const putFiles = (key, files) => useStore("readwrite", (store) => store.put({ files }, key));
 const getFiles = (key) => useStore("readonly", (store) => store.get(key));
-/* 带 key 只删该任务的清单；不带 key 才整库清（content/index.js 发 clearData 时不带 id）。 */
-const clearFiles = (key) => useStore("readwrite", (store) => (key ? store.delete(key) : store.clear()));
+/* 只按任务键删清单。不再支持「不带 key 整库清」——那会顺手删掉别的标签页正在保存的任务。
+ * 要清理所有残留，按 id 逐个 clearData 即可；宁可多几次消息，也不做无名整库删除。 */
+const clearFiles = (key) => useStore("readwrite", (store) => store.delete(key));
 
 /* 文本文件走 base64 data URL。
  * 之前是 percent-encoding：中文一个字 3 字节 → 9 个字符，带 300 条评论的 md
@@ -147,7 +148,10 @@ const MAX_RELATIVE_PATH = 180;
 
 /* 单个媒体失效不阻断同篇笔记的正文与其余文件，但失败必须一路回传给调用方：
  * 以前这里只 console.warn 一句，UI 照样报「已保存」，
- * 结果是最该看到的东西（md 里的图链）指向一批并不存在的文件。 */
+ * 结果是最该看到的东西（md 里的图链）指向一批并不存在的文件。
+ *
+ * 媒体（图片/视频）不在这里等 settle —— 一篇 65 图或一个 48MB 视频会把 SW 吊在一次长下载上。
+ * 改成把 downloadId 交给 downloadList，整批下完后统一核一次状态，见 verifyDownloads。 */
 async function downloadOne(file) {
   const filename = String(file.filename || "");
   if (filename.length > MAX_RELATIVE_PATH) {
@@ -171,9 +175,84 @@ async function downloadOne(file) {
   } catch (error) {
     return { ok: false, filename, error: String((error && error.message) || error) };
   }
-  if (!SETTLE_MIME.test(file.mime || "")) return { ok: true };
-  const settled = await settleDownload(id);
-  return settled.ok ? { ok: true } : { ok: false, filename, error: settled.error };
+  /* 小文件（md / comments.json）当场等 settle，确知写完了再报成功。 */
+  if (SETTLE_MIME.test(file.mime || "")) {
+    const settled = await settleDownload(id);
+    return settled.ok ? { ok: true } : { ok: false, filename, error: settled.error };
+  }
+  /* 媒体只登记 id，由 downloadList 统一核对，核不上的会进 failed。 */
+  return { ok: true, filename, id };
+}
+
+/* 一批媒体下完后核对真实状态。
+ *
+ * 为什么必须核：chrome.downloads.download() 的 promise 在「下载条目建出来」时就 resolve，
+ * 磁盘满、路径超长、被安全软件拦下都会在之后异步变成 interrupted。不核的后果不是少一个文件，
+ * 而是 md 里留下指向不存在文件的图链，UI 还报「已提交」——正是本扩展最该避免的那种失败。
+ *
+ * 判据：
+ *   complete    → 成功
+ *   interrupted → 失败（带 chrome 给的 error 串）
+ *   pending/in_progress → 还在写。图片多为 data: URL，通常毫秒级收尾；视频可能几十秒。
+ *                         这里只在仍有 pending 时补等一次，剩下的按成功算——
+ *                         正在进行的下载不构成失败证据，且 md 写完不影响它继续落盘。
+ *   查不到记录  → 失败。核不上就是核不上，宁可让引用消失，也不留悬空链接。 */
+const VERIFY_CHUNK = 64;
+const VERIFY_RETRY_MS = 800;
+
+async function searchByIds(ids) {
+  if (!ids.length) return [];
+  try {
+    return (await chrome.downloads.search({ id: ids })) || [];
+  } catch {
+    return [];
+  }
+}
+
+async function verifyDownloads(entries) {
+  let done = 0;
+  const failed = [];
+  for (let i = 0; i < entries.length; i += VERIFY_CHUNK) {
+    const chunk = entries.slice(i, i + VERIFY_CHUNK);
+    let items = await searchByIds(chunk.map((item) => item.id));
+    let byId = new Map((items || []).map((item) => [item.id, item]));
+
+    const classify = () => {
+      const pending = [];
+      for (const entry of chunk) {
+        if (entry.settled) continue;
+        const item = byId.get(entry.id);
+        if (!item) {
+          entry.settled = true;
+          failed.push({ filename: entry.filename, error: "下载记录不存在，无法确认已落盘" });
+        } else if (item.state === "complete") {
+          entry.settled = true;
+          done++;
+        } else if (item.state === "interrupted") {
+          entry.settled = true;
+          failed.push({ filename: entry.filename, error: item.error || "interrupted" });
+        } else {
+          pending.push(entry);
+        }
+      }
+      return pending;
+    };
+
+    let pending = classify();
+    if (pending.length) {
+      await new Promise((resolve) => setTimeout(resolve, VERIFY_RETRY_MS));
+      items = await searchByIds(pending.map((item) => item.id));
+      byId = new Map((items || []).map((item) => [item.id, item]));
+      pending = classify();
+      /* 仍在写：按成功算。md 已引用它，而下载本身还在跑。 */
+      for (const entry of pending) {
+        if (entry.settled) continue;
+        entry.settled = true;
+        done++;
+      }
+    }
+  }
+  return { done, failed };
 }
 
 /* 返回 {done, failed:[{filename,error}], cancelled}。
@@ -181,11 +260,29 @@ async function downloadOne(file) {
 async function downloadList(files, taskId) {
   let done = 0;
   const failed = [];
-  for (const file of files || []) {
+  const staged = [];
+  const list = files || [];
+  /* 空清单必须报错而不是回 {done:0, failed:[]}：调用方按「没有 failed 就是成功」判断，
+   * 空清单会被读成「已保存」，而实际一个文件都没写（暂存被别的标签页清掉时就是这个样子）。 */
+  if (!list.length) {
+    return { done: 0, failed: [{ filename: "", error: "没有待下载的文件（暂存可能已被清空）" }], cancelled: false };
+  }
+  for (const file of list) {
     if (taskId && isCancelled(taskId)) return { done, failed, cancelled: true };
     const result = await downloadOne(file);
-    if (result.ok) done++;
-    else failed.push({ filename: result.filename, error: result.error });
+    if (!result.ok) failed.push({ filename: result.filename, error: result.error });
+    else if (result.id != null) staged.push({ filename: result.filename, id: result.id });
+    else done++;
+  }
+  if (staged.length) {
+    if (taskId && isCancelled(taskId)) {
+      /* 已取消也核一遍：已经建出来的下载条目得如实回报，否则 UI 会以为一个都没写。 */
+      const settled = await verifyDownloads(staged);
+      return { done: done + settled.done, failed: failed.concat(settled.failed), cancelled: true };
+    }
+    const verified = await verifyDownloads(staged);
+    done += verified.done;
+    failed.push(...verified.failed);
   }
   return { done, failed, cancelled: false };
 }
@@ -620,6 +717,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
        * 这里换成 startTask(downloadId) / downloadList(files, downloadId) / finally endTask 即可。 */
       case "downloadFiles": {
         const files = message.data && message.data.files || [];
+        /* 空批次直接回成功：调用方按批下发，一页图里失败的图已经进了 failedWrite，
+         * 不会再发空批。真收到空批时不该谎报失败（与 downloadList 的空清单判定区分开）。 */
+        if (!files.length) return { done: 0, failed: [], cancelled: false };
         return downloadList(files);
       }
       case "downloadUrl": {
@@ -685,7 +785,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       }
       case "clearData":
-        await clearFiles(message.downloadId ? message.downloadId + ":rn" : null);
+        /* 必须带 downloadId：不带时以前走 store.clear()，会把整个 keyval-store 抹掉——
+         * 另一个标签页正在保存的任务（`<它的 id>:rn`）也一起没了，那边 download 取到
+         * undefined，0 个文件却报成功。现在缺 id 直接拒绝，让调用方的 bug 当场暴露。 */
+        if (!message.downloadId) {
+          return { error: "clearData requires downloadId" };
+        }
+        await clearFiles(message.downloadId + ":rn");
         return undefined;
       default:
         return false;
