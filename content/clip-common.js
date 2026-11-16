@@ -210,6 +210,14 @@
       type: "downloadFiles",
       data: { files: [{ filename: layout.md, text: md, mime: "text/markdown" }] },
     });
+    /* 注销 background 侧的任务条目。放在这里而不是每批之后：一个任务对应整个
+     * deliver，提前注销会让落在批间的取消信号落空（见 background.js 的 taskEnd）。
+     * 页面被直接关掉时这条发不出去，那条记录会留到 SW 回收，几字节而已。 */
+    if (taskId) {
+      try {
+        chrome.runtime.sendMessage({ type: "taskEnd", data: { taskId } }).catch(() => {});
+      } catch (error) {}
+    }
     return {
       media: written.size + videoWritten.size,
       total: images.length + videos.length,

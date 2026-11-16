@@ -10,8 +10,13 @@ const STORE_NAME = "keyval";
  * download 是 saveData 之后的独立消息，那时 saveData 的任务已注销，
  * 若把「查不到 = 已取消」，每一次保存都会在下载阶段静默变成 0 个文件。 */
 const tasks = new Map();
+/* 已有条目就保留它的 cancelled 标志，不要重置成 false：
+ * downloadFiles 是逐批来的，每批都会 startTask。取消如果正好落在两批之间，
+ * 重置一下就把「已经取消」抹掉了，下一批照旧往下写盘——而另一标签页广播的
+ * 取消（index.js 的 cancel 不带 id）在 content 侧根本没有对应信号，只剩这一道。 */
 const startTask = (id) => {
-  if (id) tasks.set(id, { cancelled: false });
+  if (!id) return;
+  if (!tasks.has(id)) tasks.set(id, { cancelled: false });
 };
 const endTask = (id) => {
   if (id) tasks.delete(id);
@@ -757,7 +762,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
        * 这两条消息原本来自没有取消入口的页面（豆瓣/微博/少数派/下厨房/值得买/Discuz/公众号），
        * 消息里也没有 downloadId 可以挂任务。现在 clip-common 的 deliver 会带上
        * data.taskId（同一套 downloadId），这里就顺手接上——带则逐轮问取消，
-       * 不带则维持原样，不造一个永远不成立的钩子。 */
+       * 不带则维持原样，不造一个永远不成立的钩子。
+       *
+       * 注意这里只登记、不注销：一个任务对应 deliver 的整个生命周期（可能几十批），
+       * 每批都 endTask 的话，落在批与批之间的那次取消会找不到任务而变成空操作，
+       * 下一批照旧写盘。注销由 deliver 收尾时发来的 taskEnd 负责。 */
       case "downloadFiles": {
         const files = message.data && message.data.files || [];
         const taskId = (message.data && message.data.taskId) || "";
@@ -766,11 +775,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!files.length) return { done: 0, failed: [], cancelled: false };
         if (!taskId) return downloadList(files);
         startTask(taskId);
-        try {
-          return await downloadList(files, taskId);
-        } finally {
-          endTask(taskId);
-        }
+        return downloadList(files, taskId);
+      }
+      case "taskEnd": {
+        /* deliver 结束（正常、取消、异常都一样）时注销任务。
+         * 标签页中途被关掉时这一条不会来，条目会留到 SW 被回收——几条内存记录，
+         * 比每批注销导致取消漏判划算。 */
+        endTask(message.data && message.data.taskId);
+        return undefined;
       }
       case "downloadUrl": {
         const data = message.data || {};
