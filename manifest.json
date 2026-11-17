@@ -6,7 +6,7 @@
          "48": "icons/icon48.png",
          "128": "icons/icon128.png"
       },
-      "default_title": "小红虾 · 下载助手",
+      "default_title": "小红虾 · 剪藏助手",
       "default_popup": "setting.html"
    },
    "options_ui": {
@@ -241,7 +241,7 @@
          "run_at": "document_idle"
       }
    ],
-   "description": "小红虾：将小红书笔记、图片、实况与视频，以及 Chiphell / 远景 / 恩山 / 耳机大家坛帖子、豆瓣影评、少数派文章、什么值得买文章、微信公众号文章、澎湃新闻文章、单条微博、下厨房菜谱、蜂鸟摄影帖、色影无忌主站文章、ABBS 建筑帖、ArchDaily / 谷德建筑案例保存到本地，自动生成 Rednote-Sharpen 格式 Markdown。",
+   "description": "小红虾：将小红书笔记、图片、实况与视频，以及 Chiphell / 远景 / 恩山 / 耳机大家坛帖子、豆瓣影评、少数派文章、什么值得买文章、微信公众号文章、澎湃新闻文章、单条微博、下厨房菜谱、蜂鸟摄影帖、色影无忌主站文章、ABBS 建筑帖、ArchDaily / 谷德建筑案例保存到本地，自动生成 Clipper-Sharpen 格式 Markdown。",
    "host_permissions": [
       "*://*.xiaohongshu.com/*",
       "*://cdnfile.sspai.com/*",
@@ -259,7 +259,7 @@
    },
    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzkCB1tQ8mH3Za8ar1RyxE1gWAqv1ATXxKTS9zyOCR1JeYEB9gqvMojsdKu5B1w5Fvg/5sKZWtibMuirEahsGsCyBhRtqTi8i7RAMmstEnVTKr+dWRb7IXuIMIkrsWf3eeh0xvrqY9gP6XT2Fl6OajO8aWUkBUJRFRkJ5wZk6fjPnZUBbPPcSxZCCEj3yKJ+uSFNmC3aOA4uCTxv87d5mitWJI7GSjjro05s3aeJoYpb5P11tr6zNVkQna3BwJQLA2eFjJTZXnUiw6DlLCpQGSDyMMUp2u7ixTLXZ2xPL97b8efy2cn5Srvt7/1B8Df1fmmAa/4eDv7BADrfy4+vAtwIDAQAB",
    "manifest_version": 3,
-   "name": "小红虾 · 下载助手",
+   "name": "小红虾 · 剪藏助手",
    "permissions": [
       "downloads",
       "scripting",

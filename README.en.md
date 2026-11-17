@@ -1,4 +1,4 @@
-# Xiao Hong Xia · Download Assistant
+# Xiao Hong Xia · Clipper Assistant
 
 > A Chrome / Edge extension (Manifest V3) that saves Xiaohongshu notes, Discuz forum threads (Chiphell, PCbeta,
 > Enshan, Erji), Douban reviews and group topics, SSPAI articles, SMZDM articles, WeChat public-account posts,
@@ -52,7 +52,7 @@ This extension does exactly one thing: **click once on the page, and get a folde
 | ArchDaily | `archdaily.com` / `archdaily.cn` | Projects, galleries, public audio previews and external video links | Body and gallery image counts use two lines with one shared image toggle; gallery goes to `gallery/`, public audio previews to `media/` |
 | gooood | `gooood.cn` | Architecture, landscape and interior projects with originals and public video | Independent image/video Download-Skip controls; resolves non-DRM Tencent iframe videos through public `getinfo` |
 
-> The Paper audio uses Obsidian's native embed syntax `![[media/file.mp3]]`, which shows a player when the Markdown is opened. Other readers can play the files directly from `media/`.
+> The Paper audio and video both use standard Markdown references `![audio N](./media/file.mp3)` — playable in any reader that resolves local relative paths (Obsidian, Typora, VS Code preview).
 
 > The desktop Weibo adapter (`weibo.com/detail/<mid>`) is wired into the manifest, but its API fields are built
 > entirely from the public endpoints and **have never been checked under a logged-in session**, so it is left
@@ -87,7 +87,7 @@ This extension does exactly one thing: **click once on the page, and get a folde
 | Panel "Body + Comments" | Body + comment section (including one level of nested replies) |
 | Panel "Images: Download / Skip" | If skipped, only the `.md` is written; no media is fetched |
 | Panel "Video quality" | Quality tiers with per-tier size; defaults to the highest tier whose shorter side is ≤ 1080p |
-| Click the capsule while downloading | Cancels the download |
+| Click the capsule while downloading | Cancels this save (media already on disk is kept; the md is still written, marked "cancelled"; works on Xiaohongshu and the 9 clip-common sites) |
 
 **Batch download is intentionally not offered.** Batching would mean opening dozens of detail pages and requesting write access to disk; it is unfriendly to the sites and easily gets accounts flagged by risk control.
 
@@ -229,10 +229,12 @@ Content scripts talk to the service worker via `chrome.runtime.sendMessage`:
 | `getNote` | `{downloadId}` | Enters the page's MAIN world to fetch the raw note object |
 | `saveData` | `{downloadId, withComment, rnOnly, videoUrl, skipMedia}` | Assembles the file list and writes it to IndexedDB |
 | `download` | `{downloadId}` | Downloads the listed files one by one |
-| `downloadFiles` | `{data:{files:[…]}}` | Hands over a batch of files directly (used by the site adapters) |
+| `downloadFiles` | `{data:{files:[…], taskId?}}` | Hands over a batch of files directly (used by the site adapters); when `taskId` is present, the cancel flag is checked on every round |
 | `downloadUrl` | `{data:{url, filename, md?, mdFilename?}}` | Downloads media first, then (optionally) writes the md |
-| `fetchMedia` | `{data:{url}}` | Fetches image bytes in the worker (bypassing CORS), returns `{ok, type, base64}` |
-| `clearData` / `cancel` | — | Clears staging / cancels the current save |
+| `fetchMedia` | `{data:{url}}` | Fetches image bytes in the worker (bypassing CORS), returns `{ok, type, base64}`; only hosts on the `MEDIA_SUFFIXES` allowlist are fetched |
+| `clearData` | `{downloadId}` | Clears the IndexedDB staging for one save (missing id fails with `clearData requires downloadId`) |
+| `cancel` | `{downloadId?}` | Cancels a save: with an id only that task, without an id every running task |
+| `taskEnd` | `{data:{taskId}}` | Cancel-task bookkeeping: the content side calls it after writing the md so the worker can drop the task entry |
 
 Staging uses IndexedDB rather than memory: MV3 service workers get recycled, and in-memory variables do not survive a cancellation or an idle period.
 

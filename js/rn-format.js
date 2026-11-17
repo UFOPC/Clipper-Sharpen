@@ -1,4 +1,4 @@
-/* Rednote-Sharpen 命名与 Markdown 规范（供 background service worker 与 content scripts 共用）
+/* Clipper-Sharpen 命名与 Markdown 规范（供 background service worker 与 content scripts 共用）
  * 目录：<标题>/，无标题时使用 未命名文件_<作者>_<发布日期>/；标题中的空白与括号不进目录名或文件名。
  * 文件：MD <YYYY.MM.DD_标题_作者>.md；评论 <YYYY.MM.DD_标题>-comments.json。
  * 媒体：images|media/<YYYY.MM.DD_标题>-NN.ext；评论图 comments/<YYYY.MM.DD_标题>-NN-cN.ext。

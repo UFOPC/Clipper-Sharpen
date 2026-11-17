@@ -1,4 +1,4 @@
-# 小红虾 · 下载助手
+# 小红虾 · 剪藏助手
 
 > 一个 Chrome / Edge 扩展（Manifest V3）：把小红书笔记、Discuz 论坛帖子（Chiphell / 远景 / 恩山 / 耳机大家坛）、
 > 豆瓣影评与小组话题、少数派文章、什么值得买文章、微信公众号文章、澎湃新闻文章、单篇微博、下厨房菜谱、
@@ -48,7 +48,8 @@
 | ArchDaily | `archdaily.com` / `archdaily.cn` | 建筑案例、图库、公开音频预览与外部视频链接 | 面板分两行统计正文图片/图库图片，共用一个图片开关；图库存 `gallery/`，公开音频预览存 `media/` |
 | 谷德设计网 | `gooood.cn` | 建筑、景观、室内案例、原图与公开视频 | 图片与视频各有独立下载/跳过开关；腾讯 iframe 经公开 `getinfo` 解析非 DRM MP4 |
 
-> 澎湃音频使用 Obsidian 原生嵌入 `![[media/文件.mp3]]`，打开 md 即可显示播放器；不支持 wikilink 的阅读器可直接播放 `media/` 中的文件。
+> 澎湃音频与视频统一使用标准 Markdown 引用 `![音频 N](./media/文件.mp3)`，
+> 任何支持本地相对路径的阅读器都能直接播放（Obsidian、Typora、VS Code 预览均可）。
 
 > 表格、弹窗、`manifest.content_scripts.matches` 三处**顺序一致**。浏览器扩展详情页按 manifest 的
 > 顺序逐条列出 `*://*.<域名>/*`，扩展改不了那串文案，但可以保证顺序对得上，从上往下逐条能对上号。
@@ -93,7 +94,7 @@
 | 面板「正文+回复」 | 正文 + 评论区（含楼中楼一层） |
 | 面板「图片 下载 / 跳过」 | 跳过则只落 md，媒体一个都不抓 |
 | 面板「视频清晰度」 | 档位列表带各档体积，默认选中短边 ≤ 1080P 的最高一档 |
-| 下载中再点胶囊 | 取消 |
+| 下载中再点胶囊 | 取消本次保存（已落盘的媒体保留，md 仍会写出并标注「已取消」；小红书与 9 个共用 clip-common 的站点均支持） |
 
 **不提供批量下载。** 批量要连点几十个详情页、还要写盘权限，对站点不友好，也容易把账号送进风控。
 
@@ -267,10 +268,12 @@ test/                  Playwright 端到端用例
 | `getNote` | `{downloadId}` | 进页面 MAIN 世界取原始 note 对象 |
 | `saveData` | `{downloadId, withComment, rnOnly, videoUrl, skipMedia}` | 组装文件清单并写入 IndexedDB |
 | `download` | `{downloadId}` | 按清单逐个落盘 |
-| `downloadFiles` | `{data:{files:[…]}}` | 直接下发一批文件（各站适配层用这条） |
+| `downloadFiles` | `{data:{files:[…], taskId?}}` | 直接下发一批文件（各站适配层用这条）；带 `taskId` 时每轮会检查取消标志 |
 | `downloadUrl` | `{data:{url, filename, md?, mdFilename?}}` | 先下媒体，再（可选）写 md |
-| `fetchMedia` | `{data:{url}}` | 后台代取图片字节（绕开 CORS），返回 `{ok, type, base64}` |
-| `clearData` / `cancel` | — | 清暂存 / 取消当前保存 |
+| `fetchMedia` | `{data:{url}}` | 后台代取图片字节（绕开 CORS），返回 `{ok, type, base64}`；仅放行 `MEDIA_SUFFIXES` 白名单内的图床域名 |
+| `clearData` | `{downloadId}` | 清空该次保存的 IndexedDB 暂存（缺 id 会报错 `clearData requires downloadId`） |
+| `cancel` | `{downloadId?}` | 取消保存：带 id 只取消该任务，不带则取消全部在跑任务 |
+| `taskEnd` | `{data:{taskId}}` | 取消任务收尾：content 侧写盘完成后调用，注销 background 侧的任务条目 |
 
 **防盗链分两种**：少数派是「内容脚本 fetch 就够」；`doubanio.com` / `sinaimg.cn` 这类是
 「必须带 Referer，页面内 fetch 又被 CORS 挡住」，只能由静态 DNR 规则改请求头 + `fetchMedia`
